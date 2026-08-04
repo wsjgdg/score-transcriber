@@ -89,6 +89,8 @@ Procfile           Railway/Render 启动命令
 DEPLOY_B_C.md      内网穿透 + 平台一键部署说明
 LICENSE            MIT 许可证
 .github/workflows/ CI 自动测试（push/PR 时校验路由）
+Makefile           make push 快捷命令（走 .env 里的 token）
+scripts/push.sh    本地推送脚本（读 .env 的 GITHUB_TOKEN 推 origin）
 ```
 
 ## 本地运行
@@ -101,6 +103,8 @@ python run.py                        # 默认 http://0.0.0.0:8000
 项目根目录可放 `.env`（已被 .gitignore 忽略，勿提交），格式参考 `.env.example`。当前读取的变量：
 - `PORT`：后端监听端口（run.py 读取，默认 8000）。
 - `GITHUB_TOKEN`：仅用于本地 git 推送 / 调试 CI，不进入应用运行时；含密钥，务必只留在本地 `.env`。
+
+**本地推送**：`GITHUB_TOKEN` 填好后，运行 `./scripts/push.sh`（或 `make push`）会从 `.env` 读取 token 并推送到当前分支，避免密钥出现在命令行参数或聊天里。
 
 ## 部署
 详见 **`DEPLOY_B_C.md`**：
