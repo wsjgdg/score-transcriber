@@ -97,6 +97,11 @@ pip install -r requirements.txt      # 另需系统装 ffmpeg、lilypond
 python run.py                        # 默认 http://0.0.0.0:8000
 ```
 
+## 环境变量（.env）
+项目根目录可放 `.env`（已被 .gitignore 忽略，勿提交），格式参考 `.env.example`。当前读取的变量：
+- `PORT`：后端监听端口（run.py 读取，默认 8000）。
+- `GITHUB_TOKEN`：仅用于本地 git 推送 / 调试 CI，不进入应用运行时；含密钥，务必只留在本地 `.env`。
+
 ## 部署
 详见 **`DEPLOY_B_C.md`**：
 - **方案 B**：内网穿透（cloudflared），不买服务器、不装 Docker，本机常开即可临时分享。
