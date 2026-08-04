@@ -5,6 +5,7 @@ music21==10.5.0
 pretty_midi==0.2.11
 fastapi
 uvicorn
+python-multipart   # FastAPI Form/File 上传端点（/api/transcribe）import 时即要求安装
 matplotlib
 numpy==1.26.4
 soundfile        # 顶层硬依赖（transcriber.py: import soundfile），缺则无法 import 模块

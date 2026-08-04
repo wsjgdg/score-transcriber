@@ -7,5 +7,6 @@ soundfile
 matplotlib
 fastapi
 uvicorn
+python-multipart   # FastAPI Form/File 上传端点（/api/transcribe）import 时即要求安装
 pytest
 httpx
