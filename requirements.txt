@@ -1,5 +1,5 @@
-# 依赖已预装在沙箱 python3.11（含 basic-pitch / tensorflow / music21 / lilypond 系统包）
-# 重新部署可参考（注意 basic-pitch 需配合 jax==0.4.38 以兼容 numpy 1.26 / tensorflow 2.15）
+# 运行期完整依赖（部署/沙箱用）。CI 只需轻量子集，见 requirements-ci.txt。
+# 注意：basic-pitch 需配合 jax==0.4.38 以兼容 numpy 1.26 / tensorflow 2.15。
 basic-pitch==0.4.0
 music21==10.5.0
 pretty_midi==0.2.11
@@ -7,6 +7,8 @@ fastapi
 uvicorn
 matplotlib
 numpy==1.26.4
+soundfile        # 顶层硬依赖（transcriber.py: import soundfile），缺则无法 import 模块
+librosa          # 函数内惰性导入，运行时做 STFT / 节拍跟踪 / BPM 估计
 jax==0.4.38
 demucs==4.1.0   # 可选：分离伴奏预处理（默认开启），依赖 torch（已随沙箱预装）
 # faster-whisper==1.1.1   # 可选：自动识别人声歌词(ASR)，仅自托管 GPU 环境；免费托管未预装

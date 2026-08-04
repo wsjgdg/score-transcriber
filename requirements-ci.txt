@@ -1,0 +1,11 @@
+# Minimal deps for CI: app import check + route health check + unit tests.
+# Heavy ML deps (basic-pitch/tensorflow, music21, pretty_midi, demucs/torch, jax)
+# are lazy-imported inside transcriber.py and NOT required by the test suite,
+# so installing them here would only slow CI down / risk build failures.
+numpy==1.26.4
+soundfile
+matplotlib
+fastapi
+uvicorn
+pytest
+httpx

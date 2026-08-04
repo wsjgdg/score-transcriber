@@ -83,7 +83,8 @@ app.py             FastAPI 应用（路由 + 上传接口，含 denoise_threshol
 run.py             统一启动入口（读 PORT 环境变量，默认 8000）
 transcriber.py     核心：音视频抽取、转录、响应强度/降噪、乐谱/简谱/带响应强度标注的钢琴卷帘生成
 static/app.html    前端上传与结果展示页（含响应强度提示、可调降噪阈值滑块）
-requirements.txt   Python 依赖
+requirements.txt   Python 运行期依赖（部署/沙箱用，含重 ML 依赖）
+requirements-ci.txt CI 轻量依赖（import 检查 + 路由健康检查 + 单测；不装 basic-pitch/torch 等重依赖）
 Dockerfile         Docker 部署（含 ffmpeg/lilypond/fonts-noto-cjk/fluidsynth/demucs 系统包与依赖）
 Procfile           Railway/Render 启动命令
 DEPLOY_B_C.md      内网穿透 + 平台一键部署说明
