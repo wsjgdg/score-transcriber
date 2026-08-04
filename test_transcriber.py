@@ -24,7 +24,7 @@ def test_tokenize_lyrics_english_word():
 
 def test_tokenize_lyrics_strips_punct():
     assert T.tokenize_lyrics("，。！？") == []           # 纯标点剔除
-    assert T.tokenize_lyrics("（你好）") == ["你好"]      # 首尾标点去掉
+    assert T.tokenize_lyrics("（你好）") == ["你", "好"]  # 无空格按字切分，剔除包裹标点（中文按字）
 
 
 def test_tokenize_lyrics_empty():
