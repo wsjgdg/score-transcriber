@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+uploads/
+outputs/
+history.json
+.env
+*.log
+.DS_Store
+
+# 发布的 zip 包本身不入库
+*.zip

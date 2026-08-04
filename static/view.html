@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>历史记录查看 · Score Transcriber</title>
+<style>
+  :root{
+    --bg:#0f1220; --panel:#171b2e; --panel2:#1f2540; --line:#2c3358;
+    --text:#e8ecf8; --muted:#9aa3c4; --accent:#6c8cff;
+    --ok:#46e0c0; --err:#ff6b81;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+    background:radial-gradient(1200px 600px at 80% -10%,#1c2350 0%,var(--bg) 55%);color:var(--text);min-height:100vh}
+  .wrap{max-width:980px;margin:0 auto;padding:24px 16px 60px}
+  h1{font-size:22px;margin:0 0 4px;letter-spacing:.5px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:18px;line-height:1.6}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:18px;
+    box-shadow:0 8px 30px rgba(0,0,0,.25)}
+  .stats{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:10px 14px;min-width:96px}
+  .stat .k{font-size:11px;color:var(--muted)}
+  .stat .v{font-size:18px;font-weight:700;margin-top:2px}
+  h3{font-size:15px;margin:16px 0 10px;display:flex;align-items:center;gap:8px}
+  .tag{font-size:11px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);padding:2px 8px;border-radius:20px}
+  img.score{width:100%;border-radius:12px;border:1px solid var(--line);background:#fff;cursor:zoom-in}
+  pre.jianpu{background:#0e1226;border:1px solid var(--line);border-radius:12px;padding:14px;white-space:pre-wrap;
+    font-family:"SFMono-Regular",Consolas,monospace;font-size:14px;line-height:1.9;color:#cdd6ff}
+  .dl{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px}
+  .dl a{text-decoration:none;background:var(--panel2);border:1px solid var(--line);color:var(--text);padding:10px 14px;border-radius:10px;font-size:13.5px}
+  .dl a:hover{border-color:var(--accent)}
+  .msg{padding:12px 16px;border-radius:10px;font-size:14px;margin-bottom:16px}
+  .msg.err{background:rgba(255,107,129,.12);border:1px solid var(--err);color:#ffd2da}
+  .hint{font-size:12px;color:var(--muted);margin-top:12px;line-height:1.7}
+  .hidden{display:none}
+  .copyBtn{background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer}
+  .back{display:inline-block;text-decoration:none;color:var(--text);background:var(--panel2);border:1px solid var(--line);
+    padding:9px 14px;border-radius:10px;font-size:14px;margin-bottom:14px}
+  .back:hover{border-color:var(--accent)}
+  .player{display:flex;align-items:center;gap:12px;margin:6px 0 14px}
+  .compare-cols{display:flex;gap:16px;flex-wrap:wrap}
+  .pcol{flex:1;min-width:240px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px}
+  .pcol h4{margin:0 0 8px;font-size:13px;color:var(--muted)}
+  .badge{display:inline-block;font-size:11px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);padding:1px 7px;border-radius:20px;margin-right:5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎼 历史记录查看</h1>
+  <div class="sub">这是一条历史转谱记录的独立页面，可回看乐谱、播放原音频与识别钢琴谱、并下载产物。</div>
+  <a class="back" href="/app.html">← 返回上传页 / 历史列表</a>
+  <div id="error" class="msg err hidden"></div>
+  <div id="result" class="card hidden"></div>
+</div>
+
+<script src="/static/player.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+
+function showErr(m){ const e=$("error"); e.textContent=m; e.classList.remove("hidden"); }
+
+// 从 URL 取 ?id=
+const params = new URLSearchParams(location.search);
+const id = params.get("id");
+
+if(!id){
+  showErr("缺少记录 ID（链接不完整）。请回到历史列表重新点击「查看」。");
+}else{
+  fetch("/api/history/" + encodeURIComponent(id)).then(r => r.json()).then(d => {
+    if(d.status !== "ok" || !d.record){ showErr(d.msg || "未找到该历史记录。"); return; }
+    renderResult(d.record);
+  }).catch(() => {
+    showErr("加载历史记录失败，请检查网络后重试。");
+  });
+}
+</script>
+</body>
+</html>

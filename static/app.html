@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>音视频转乐谱 · Score Transcriber</title>
+<style>
+  :root{
+    --bg:#0f1220; --panel:#171b2e; --panel2:#1f2540; --line:#2c3358;
+    --text:#e8ecf8; --muted:#9aa3c4; --accent:#6c8cff;
+    --ok:#46e0c0; --err:#ff6b81;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+    background:radial-gradient(1200px 600px at 80% -10%,#1c2350 0%,var(--bg) 55%);color:var(--text);min-height:100vh}
+  .wrap{max-width:980px;margin:0 auto;padding:24px 16px 60px}
+  h1{font-size:22px;margin:0 0 4px;letter-spacing:.5px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:20px;line-height:1.6}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:18px;
+    box-shadow:0 8px 30px rgba(0,0,0,.25)}
+  /* ===== 上传区：<label> 包裹 file 控件，移动端 100% 可靠 ===== */
+  .upload-label{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+    border:2px dashed var(--line);border-radius:14px;padding:34px 16px;background:var(--panel2);
+    cursor:pointer;text-align:center;transition:.2s}
+  .upload-label:active{border-color:var(--accent);background:#20264a}
+  .upload-label .big{color:var(--text);font-size:16px;font-weight:600}
+  .upload-label .small{color:var(--muted);font-size:12.5px;line-height:1.6}
+  .upload-label input[type=file]{display:none}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:14px}
+  label.fld{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted)}
+  input[type=number]{width:100%;padding:10px;border-radius:9px;border:1px solid var(--line);background:#0e1226;color:var(--text);font-size:15px}
+  button.go{margin-left:auto;background:linear-gradient(135deg,var(--accent),#8a6cff);color:#fff;border:0;padding:13px 24px;border-radius:11px;
+    font-size:15px;font-weight:600;cursor:pointer;transition:.15s;min-height:46px}
+  button.go:hover{filter:brightness(1.08)}
+  button.go:disabled{opacity:.5;cursor:not-allowed}
+  .hint{font-size:12px;color:var(--muted);margin-top:12px;line-height:1.7}
+  .stats{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:10px 14px;min-width:96px}
+  .stat .k{font-size:11px;color:var(--muted)}
+  .stat .v{font-size:18px;font-weight:700;margin-top:2px}
+  h3{font-size:15px;margin:16px 0 10px;display:flex;align-items:center;gap:8px}
+  .tag{font-size:11px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);padding:2px 8px;border-radius:20px}
+  img.score{width:100%;border-radius:12px;border:1px solid var(--line);background:#fff;cursor:zoom-in}
+  pre.jianpu{background:#0e1226;border:1px solid var(--line);border-radius:12px;padding:14px;white-space:pre-wrap;
+    font-family:"SFMono-Regular",Consolas,monospace;font-size:14px;line-height:1.9;color:#cdd6ff}
+  .dl{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px}
+  .dl a{text-decoration:none;background:var(--panel2);border:1px solid var(--line);color:var(--text);padding:10px 14px;border-radius:10px;font-size:13.5px}
+  .dl a:hover{border-color:var(--accent)}
+  .msg{padding:12px 16px;border-radius:10px;font-size:14px;margin-bottom:16px}
+  .msg.err{background:rgba(255,107,129,.12);border:1px solid var(--err);color:#ffd2da}
+  .msg.ok{background:rgba(70,224,192,.12);border:1px solid var(--ok);color:#c8fff2}
+  .hidden{display:none}
+  .copyBtn{background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer}
+  .footer{color:var(--muted);font-size:11.5px;text-align:center;margin-top:26px;line-height:1.7}
+  .hist-item{display:flex;gap:12px;align-items:center;padding:10px 4px;border-bottom:1px solid var(--line);cursor:pointer;transition:.15s}
+  .hist-item:active{background:#20264a}
+  .player{display:flex;align-items:center;gap:12px;margin:6px 0 14px}
+  .adv{margin-top:16px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel2)}
+  .adv-title{font-size:13px;color:var(--muted);margin-bottom:8px}
+  .adv .grid{display:flex;gap:18px;flex-wrap:wrap}
+  .chk{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text);margin:7px 0;cursor:pointer}
+  .chk input{width:16px;height:16px;accent-color:var(--accent)}
+  select{padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:#0e1226;color:var(--text);font-size:14px}
+  .badge{display:inline-block;font-size:11px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);padding:1px 7px;border-radius:20px;margin-right:5px}
+  .compare-cols{display:flex;gap:16px;flex-wrap:wrap}
+  .pcol{flex:1;min-width:240px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px}
+  .pcol h4{margin:0 0 8px;font-size:13px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎼 音视频转乐谱</h1>
+  <div class="sub">上传音频或视频，自动识别音高与节奏，生成五线谱、钢琴卷帘图、简谱与可下载的 MIDI / MusicXML，并可播放原音频与识别出的钢琴谱。</div>
+
+  <div class="card">
+    <!-- 关键：<label> 直接包裹 file 控件。iOS Safari / Android 点 label 必弹选择器 -->
+    <label class="upload-label" id="drop">
+      <input id="file" type="file" accept="audio/*,video/*" />
+      <span class="big" id="dropText">点击选择音频 / 视频文件</span>
+      <span class="small">支持 MP3 / WAV / M4A / FLAC / MP4 / MOV / MKV 等<br/>建议人声或主旋律清晰、伴奏较弱，时长尽量 1 分钟内</span>
+    </label>
+    <div class="row">
+      <label class="fld">速度 BPM（可选）
+        <input id="bpm" type="number" value="120" min="40" max="300" inputmode="numeric" />
+      </label>
+      <label class="fld">每小节拍数（可选）
+        <input id="beats" type="number" value="4" min="1" max="12" inputmode="numeric" />
+      </label>
+      <label class="fld" style="min-width:240px">
+        降噪阈值（过滤弱音符）
+        <div style="display:flex;align-items:center;gap:10px;margin-top:2px">
+          <input id="denoise" type="range" min="0" max="0.9" step="0.05" value="0.5" style="flex:1;width:auto" />
+          <span id="denoiseVal" style="font-size:13px;color:var(--text);min-width:74px;text-align:right">0.50（常规）</span>
+        </div>
+        <span style="font-size:11.5px;color:var(--muted)">0 = 不降噪；滑块越靠右越严格</span>
+      </label>
+      <button id="go" class="go">开始转谱 →</button>
+    </div>
+    <div class="adv">
+      <div class="adv-title">进阶优化（提升识别准确度与音符响应强度）</div>
+      <div class="grid">
+        <label class="chk"><input type="checkbox" id="optSeparate" checked /> 分离伴奏（Demucs，削减误捡）</label>
+        <div id="sepHint" style="font-size:11.5px;color:var(--muted);margin:-2px 0 4px 24px"></div>
+        <label class="chk"><input type="checkbox" id="optHighConf" /> 仅保留强响应音符（≥75%）</label>
+        <label class="chk"><input type="checkbox" id="optAutoBpm" /> 自动估计 BPM</label>
+        <label class="chk"><input type="checkbox" id="optSmart" /> 智能降噪（自适应阈值）</label>
+      </div>
+      <div class="grid" style="margin-top:6px">
+        <label class="fld" style="min-width:200px">分离声部
+          <select id="optTarget">
+            <option value="vocals">人声</option>
+            <option value="other">钢琴/旋律(other)</option>
+            <option value="auto">自动（取能量更高者）</option>
+          </select>
+        </label>
+        <label class="fld" style="min-width:200px">模型后端
+          <select id="optBackend">
+            <option value="basic-pitch">basic-pitch（快速·默认）</option>
+            <option value="mt3">MT3 复调（需自有 GPU 服务器）</option>
+          </select>
+        </label>
+        <label class="fld" style="min-width:200px">选调 / 移调
+          <select id="optKey">
+            <option value="C">原调 (1=C)</option>
+            <option value="bD">♭D（降2）</option>
+            <option value="D">D（升2）</option>
+            <option value="bE">♭E（降3）</option>
+            <option value="E">E（升4）</option>
+            <option value="F">F（升5）</option>
+            <option value="#F">♯F（升6）</option>
+            <option value="G">G（降5）</option>
+            <option value="bA">♭A（降4）</option>
+            <option value="A">A（降3）</option>
+            <option value="bB">♭B（降2）</option>
+            <option value="B">B（降1）</option>
+          </select>
+        </label>
+      </div>
+      <div style="margin-top:12px;border-top:1px dashed var(--line);padding-top:10px">
+        <div class="adv-title">准确率增强（纯 CPU，无额外模型；按音频特点叠加）</div>
+        <div class="grid">
+          <label class="chk"><input type="checkbox" id="optHpss" /> 分离鼓点 HPSS（去打击乐/噪声干扰）</label>
+          <label class="chk"><input type="checkbox" id="optMelody" /> 人声单旋律模式（限频段 80–1000Hz，仅留最强音）</label>
+          <label class="chk"><input type="checkbox" id="optClean" /> 纯净后处理（泛音过滤+最小音长+间隙合并+onset确认）</label>
+          <label class="chk"><input type="checkbox" id="optRms" /> RMS 力度（按响度重算力度值）</label>
+          <label class="chk"><input type="checkbox" id="optFine" /> 更细量化网格（1/8 拍，减少时值取整误差）</label>
+          <label class="chk"><input type="checkbox" id="optAutoBeats" /> 自动估计拍号（4/4、3/4、6/8…）</label>
+        </div>
+        <div id="accHint" style="font-size:11.5px;color:var(--muted);margin:2px 0 0 24px;line-height:1.7">
+          · HPSS/纯净后处理能显著减少鼓点和弱泛音造成的误捡；<b>单旋律模式会把和弦压成单音</b>，只用于人声/主旋律，别用在和弦音乐上。<br/>
+          · 这些选项互不冲突，可自由叠加；节奏清晰时效果最好。
+        </div>
+      </div>
+      <div style="margin-top:12px;border-top:1px dashed var(--line);padding-top:10px">
+        <div class="adv-title">歌词（把人声/填词打到五线谱每行下方）</div>
+        <textarea id="optLyrics" rows="2" placeholder="手动填词：粘贴歌词文字。中文按字、英文按词自动对齐到音符（每行对应一个音符）。留空则不加歌词。"
+          style="width:100%;margin-top:6px;padding:10px;border-radius:9px;border:1px solid var(--line);background:#0e1226;color:var(--text);font-size:14px;resize:vertical"></textarea>
+        <label class="chk" style="margin-top:8px"><input type="checkbox" id="optAsr" /> 自动识别人声歌词（Whisper，仅自托管 GPU 可用）</label>
+        <div id="asrHint" style="font-size:11.5px;color:var(--muted);margin:-2px 0 0 24px"></div>
+      </div>
+    </div>
+    <div class="hint">
+      · BPM 与拍号用于把识别出的音符对齐到节拍网格（生成五线谱 / 简谱时）。不确定就保持默认 120 / 4。<br/>
+      · 降噪阈值越高，越激进地丢弃弱响应音符（适合强伴奏 / 嘈杂录音）；设 0 则保留全部识别结果。<br/>
+      · 复调音乐（和弦）会显示为五线谱上的和弦音与钢琴卷帘上的多层方块；旋律型内容识别最佳。<br/>
+      · 首次分析需加载模型，约 10–60 秒，请耐心等待。
+    </div>
+  </div>
+
+  <div class="card" id="historyCard">
+    <div style="display:flex;align-items:center;gap:10px">
+      <h3 style="margin:0">历史记录 <span class="tag">自动保存</span></h3>
+      <button id="clearHist" class="copyBtn" style="margin-left:auto">清空</button>
+    </div>
+    <input id="histSearch" type="text" placeholder="按文件名筛选…" inputmode="search"
+           style="width:100%;margin-top:10px;padding:9px 12px;border-radius:9px;border:1px solid var(--line);background:#0e1226;color:var(--text);font-size:14px" />
+    <div id="historyList" class="hidden" style="margin-top:8px"></div>
+  </div>
+
+  <div id="error" class="msg err hidden"></div>
+
+  <div id="progressCard" class="card hidden">
+    <div class="adv-title" id="progStage">转录中…</div>
+    <div style="height:10px;background:#0e1226;border-radius:6px;overflow:hidden;border:1px solid var(--line);margin-top:8px">
+      <div id="progBar" style="height:100%;width:0%;background:linear-gradient(90deg,var(--accent),#8a6cff);transition:width .3s"></div>
+    </div>
+    <div id="progPct" style="font-size:12px;color:var(--muted);margin-top:6px">0%</div>
+  </div>
+
+  <div id="result" class="card hidden"></div>
+
+  <div class="footer">
+    由 basic-pitch（多音转录）+ LilyPond（五线谱渲染）+ music21（MusicXML）驱动 · 本工具在本地沙箱中运行。<br/>
+    <a href="/download/source" style="color:var(--accent);text-decoration:none">⬇ 下载本项目完整源码（zip）</a>
+  </div>
+</div>
+
+<script src="/static/player.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const fileInput = $("file"), go = $("go"), dropText = $("dropText");
+
+// 选择文件后更新文案
+fileInput.addEventListener("change", () => {
+  if(fileInput.files[0]) dropText.textContent = "已选择：" + fileInput.files[0].name;
+});
+
+// 降噪阈值滑块：实时更新文案
+function updDenoiseLabel(){
+  const v = parseFloat($("denoise").value);
+  let tier = v <= 0 ? "不降噪" : (v <= 0.3 ? "宽松" : (v <= 0.6 ? "常规" : "严格"));
+  $("denoiseVal").textContent = (v <= 0 ? "0" : v.toFixed(2)) + "（" + tier + "）";
+}
+$("denoise").addEventListener("input", updDenoiseLabel);
+updDenoiseLabel();
+
+// 运行时能力探测：有 demucs 才默认勾选分离；无则取消并提示（避免“开了却没分离”的错觉）
+fetch("/api/caps").then(r => r.json()).then(c => {
+  const sep = $("optSeparate");
+  if (sep && !c.demucs) {
+    sep.checked = false;
+    const h = $("sepHint");
+    if (h) h.textContent = "当前托管环境未预装 demucs，分离将自动跳过；在自有 GPU/服务器部署时可启用此选项。";
+  }
+  const be = $("optBackend");
+  if (be && !c.mt3) {
+    for (const o of be.options) {
+      if (o.value === "mt3") o.textContent = "MT3 复调（需自托管 GPU，当前不可用）";
+    }
+  }
+  const asr = $("optAsr");
+  if (asr && !c.whisper) {
+    asr.checked = false;
+    asr.disabled = true;
+    const h = $("asrHint");
+    if (h) h.textContent = "当前托管环境未预装 Whisper，自动识别将报错；在自有 GPU/服务器部署并安装 faster-whisper 后可启用。也可用上方文本框手动填词。";
+  }
+}).catch(() => {});
+
+function showErr(m){ const e=$("error"); e.textContent=m; e.classList.remove("hidden"); }
+function hideErr(){ $("error").classList.add("hidden"); }
+
+go.addEventListener("click", async () => {
+  const f = fileInput.files[0];
+  if(!f){ showErr("请先选择（点击上方框）一个音频或视频文件。"); return; }
+  if(f.size > 30*1024*1024){
+    showErr("文件超过 30MB，预览环境可能超时断开。建议裁剪到 1 分钟内的片段再试。");
+    return;
+  }
+  hideErr(); $("result").classList.add("hidden");
+  $("progressCard").classList.remove("hidden");
+  go.disabled = true; const old = go.textContent; go.textContent = "排队转录中…";
+  const progCard = $("progressCard"), bar = $("progBar"), pct = $("progPct"), stage = $("progStage");
+  bar.style.width = "2%"; pct.textContent = "2%"; stage.textContent = "已提交，排队中…";
+
+  let jobId = null, done = false, deadline = Date.now() + 300000;
+  try{
+    const fd = new FormData();
+    fd.append("file", f);
+    fd.append("bpm", $("bpm").value || 120);
+    fd.append("beats", $("beats").value || 4);
+    fd.append("denoise_threshold", $("denoise").value || 0);
+    fd.append("separate", $("optSeparate").checked ? "true" : "false");
+    fd.append("separate_target", $("optTarget").value);
+    fd.append("high_conf_only", $("optHighConf").checked ? "true" : "false");
+    fd.append("auto_bpm", $("optAutoBpm").checked ? "true" : "false");
+    fd.append("smart_denoise", $("optSmart").checked ? "true" : "false");
+    fd.append("backend", $("optBackend").value);
+    fd.append("lyrics", $("optLyrics").value || "");
+    fd.append("asr", $("optAsr").checked ? "true" : "false");
+    fd.append("hpss", $("optHpss").checked ? "true" : "false");
+    fd.append("melody", $("optMelody").checked ? "true" : "false");
+    fd.append("clean", $("optClean").checked ? "true" : "false");
+    fd.append("rms_vel", $("optRms").checked ? "true" : "false");
+    fd.append("fine_quant", $("optFine").checked ? "true" : "false");
+    fd.append("auto_beats", $("optAutoBeats").checked ? "true" : "false");
+    fd.append("key", $("optKey").value || "C");
+    const r = await fetch("/api/transcribe", {method:"POST", body: fd});
+    const data = await r.json();
+    if(data.status !== "queued"){ showErr(data.msg || "提交失败"); return; }
+    jobId = data.job_id;
+    // 轮询进度，直到完成或出错
+    while(Date.now() < deadline){
+      await new Promise(res => setTimeout(res, 800));
+      const pr = await fetch("/api/progress/" + encodeURIComponent(jobId));
+      const pj = await pr.json();
+      if(pj.status === "done"){
+        if(pj.result && pj.result.status === "ok"){
+          renderResult(pj.result);
+          fetchHistory();
+        }else{
+          showErr("处理失败，请重试。");
+        }
+        done = true; break;
+      }else if(pj.status === "error"){
+        showErr(pj.error || "处理失败");
+        done = true; break;
+      }else if(pj.status === "not_found"){
+        showErr("任务已过期，请重试。");
+        done = true; break;
+      }
+      const pp = Math.max(2, Math.min(99, pj.progress || 0));
+      bar.style.width = pp + "%"; pct.textContent = pp + "%";
+      stage.textContent = pj.stage || "转录中…";
+    }
+    if(!done) showErr("处理超时：转录耗时过长。请尝试更短的音视频片段（建议 1 分钟内），或稍后重试。");
+  }catch(err){
+    showErr("网络中断或请求失败。请检查网络后重试；若文件较大，请换更短的片段。");
+  }finally{
+    progCard.classList.add("hidden");
+    go.disabled = false; go.textContent = old;
+  }
+});
+
+// ---- 历史记录 ----
+function esc(s){
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderHistory(list, filter){
+  window.__hist = list || [];
+  const box = $("historyList");
+  const kw = (filter || "").trim().toLowerCase();
+  let items = window.__hist;
+  if(kw) items = items.filter(r => (r.filename || "").toLowerCase().includes(kw));
+  if(!items.length){
+    box.innerHTML = window.__hist.length
+      ? '<div class="hint">没有匹配「' + esc(filter) + '」的文件名。</div>'
+      : '<div class="hint">暂无记录。成功转化后会自动出现在这里，点「查看」可跳到独立页面回看或下载。</div>';
+    box.classList.remove("hidden");
+    return;
+  }
+  box.innerHTML = items.map(r=>{
+    const s = r.stats || {};
+    const o = r.opts || {};
+    const conf = (s.confidence != null) ? s.confidence : "—";
+    const otags = [];
+    if(o.separate) otags.push("分离:" + (o.separate_target || ""));
+    if(o.high_conf_only) otags.push("强响应");
+    if(o.auto_bpm) otags.push("自动BPM");
+    if(o.smart_denoise) otags.push("智能降噪");
+    if(o.lyrics) otags.push("歌词");
+    if(o.asr) otags.push("ASR歌词");
+    if(o.hpss) otags.push("HPSS");
+    if(o.melody) otags.push("单旋律");
+    if(o.clean) otags.push("纯净后处理");
+    if(o.rms_vel) otags.push("RMS力度");
+    if(o.fine_quant) otags.push("细量化");
+    if(o.auto_beats) otags.push("自动拍号");
+    if(o.backend && o.backend !== "basic-pitch") otags.push(o.backend);
+    const optStr = otags.length
+      ? '<div style="margin-top:4px">' + otags.map(t => `<span class="badge">${esc(t)}</span>`).join("") + '</div>'
+      : "";
+      return `<div class="hist-item" data-id="${esc(r.id)}">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.filename || "未命名")}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">${esc(r.time)} · 响应强度 ${conf}% · ${s.num_notes||0} 音 · BPM ${r.bpm||120}</div>
+        ${optStr}
+      </div>
+      <button class="copyBtn" data-del="${esc(r.id)}" style="color:var(--err);border-color:var(--err)">删除</button>
+      <button class="copyBtn" data-view="${esc(r.id)}">查看</button>
+    </div>`;
+  }).join("");
+  box.classList.remove("hidden");
+  const view = (id) => { window.location.href = "/view.html?id=" + encodeURIComponent(id); };
+  box.querySelectorAll("[data-view]").forEach(b =>
+    b.addEventListener("click", e => { e.stopPropagation(); view(b.dataset.view); }));
+  box.querySelectorAll("[data-del]").forEach(b =>
+    b.addEventListener("click", e => {
+      e.stopPropagation();
+      if(!confirm("确定删除这条历史记录？其音频/乐谱文件也会一并删除。")) return;
+      fetch("/api/history/" + encodeURIComponent(b.dataset.del), {method:"DELETE"})
+        .then(r => r.json()).then(d => { if(d.status === "ok") fetchHistory(); });
+    }));
+  box.querySelectorAll(".hist-item").forEach(it =>
+    it.addEventListener("click", () => view(it.dataset.id)));
+}
+
+function fetchHistory(){
+  fetch("/api/history").then(r => r.json()).then(d => {
+    if(d.status === "ok") renderHistory(d.history, $("histSearch").value);
+  }).catch(() => {});
+}
+
+$("histSearch").addEventListener("input", () => renderHistory(window.__hist, $("histSearch").value));
+
+$("clearHist").addEventListener("click", () => {
+  if(!confirm("确定清空本会话的历史记录？已下载的文件不受影响，但页面内的“查看”链接将失效。")) return;
+  fetch("/api/history/clear", {method:"POST"}).then(() => fetchHistory());
+});
+
+fetchHistory();
+</script>
+</body>
+</html>
