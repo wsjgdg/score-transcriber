@@ -5,17 +5,19 @@ FROM python:3.11-slim
 # - lilypond: 五线谱渲染
 # - fonts-noto-cjk: 钢琴卷帘 / 图表中文
 # - fluidsynth + 音源: 真实乐器音色试听（缺失则自动回退基础合成）
-# - default-jre-headless: 五线谱 OMR 引擎 Audiveris（Java）运行所需
 # - libgomp1 / libgl1 / libsm6 / libxext6 / libxrender1 / libglib2.0-0:
 #       paddlepaddle / tensorflow / torch(demucs) / opencv 运行所需的 .so
-# - curl / ca-certificates: 下载 Audiveris 发行包
+# - curl / ca-certificates: 下载 Audiveris 发行包 与 Java 25 JRE
+# 注意：Debian 自带 default-jre-headless 仅 Java 21（class file version 上限 65），
+#       而 Audiveris 5.11 由 Java 25（class file version 69）编译，会报
+#       UnsupportedClassVersionError。故改用 Adoptium Eclipse Temurin 25 JRE，
+#       在下方「Java 25 JRE」块单独安装并软链到 PATH。
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     lilypond \
     fonts-noto-cjk \
     fluidsynth \
     timgm6mb-soundfont \
-    default-jre-headless \
     libgomp1 \
     libgl1 \
     libsm6 \
@@ -25,6 +27,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Java 25 JRE（Eclipse Temurin，经 Adoptium API 直接拉取最新 25 GA 的 JRE tarball）。
+# Debian 自带 JRE 太旧（Java 21），无法满足 Audiveris 5.11 的 class file version 69。
+# 解包到 /opt/java25，将 bin/java 软链进 /usr/local/bin（PATH 优先级高于 /usr/bin），
+# 并设 JAVA_HOME，确保 Audiveris 官方启动器 /usr/bin/audiveris 命中 Java 25。
+ENV JAVA_HOME=/opt/java25
+ENV PATH="/opt/java25/bin:${PATH}"
+RUN set -eux; \
+    curl -fSL -o /tmp/java25.tar.gz \
+      "https://api.adoptium.net/v3/binary/latest/25/ga/linux/x64/jre/hotspot/normal/eclipse"; \
+    mkdir -p /opt/java25; \
+    tar -xzf /tmp/java25.tar.gz -C /opt/java25 --strip-components=1; \
+    rm -f /tmp/java25.tar.gz; \
+    ln -sf /opt/java25/bin/java /usr/local/bin/java; \
+    java -version
 
 # 五线谱 OMR 引擎 Audiveris（开源，Java，纯 Java 应用）。
 # 取 ubuntu22.04 的 deb（GLIBC 2.35 低于 Debian 12 的 2.36，兼容性更好）。

@@ -76,7 +76,7 @@ https://xxxx.trycloudflare.com
 
 `Dockerfile`（已在本目录提供）已做云端开箱即用加固：
 
-- 装 `default-jre-headless` 并自动下载 **Audiveris 5.11.0** 解包出 `audiveris.jar` 到 `/opt/audiveris` → **五线谱 OMR 在云上直接可用**（无需部署者再装 Java/引擎）。
+- 自动安装 **Eclipse Temurin 25 JRE**（Debian 自带 JRE 仅 Java 21，Audiveris 5.11 需要 Java 25，否则报 `UnsupportedClassVersionError`），并下载 **Audiveris 5.11.0** 用 `dpkg-deb -x` 解包到根目录（官方启动器 `/usr/bin/audiveris` + `audiveris.jar` + `lib/` 落到标准路径）→ **五线谱 OMR 在云上直接可用**（无需部署者再装 Java/引擎）。
 - 补 `libgomp1 / libgl1 / libsm6 / libxext6 / libxrender1 / libglib2.0-0` → PaddleOCR / tensorflow / torch(demucs) / opencv 在 slim 镜像里能正常 import（否则会缺 `.so` 崩溃）。
 - 构建期预下载 **PaddleOCR** 中文模型 → 简谱 OCR 首次请求不再卡顿（失败也不阻断构建）。
 - 支持 `ARG REQ_FILE`：**整站部署**用默认 `requirements.txt`（含音频转录重型 ML 栈）；**只想做识谱（OMR）**可改用轻量的 `requirements-omr.txt`（镜像显著更小）：
@@ -88,20 +88,35 @@ https://xxxx.trycloudflare.com
 
 ```dockerfile
 FROM python:3.11-slim
+# 系统依赖：注意不再装 default-jre-headless（仅 Java 21），改用下方 Java 25 JRE
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg lilypond fonts-noto-cjk fluidsynth timgm6mb-soundfont \
-    default-jre-headless libgomp1 libgl1 libsm6 libxext6 libxrender1 \
+    libgomp1 libgl1 libsm6 libxext6 libxrender1 \
     libglib2.0-0 curl ca-certificates && rm -rf /var/lib/apt/lists/*
-# 下载并解包 Audiveris 5.11.0 到 /opt/audiveris（五线谱 OMR 引擎）
+
+# Java 25 JRE（Eclipse Temurin，Audiveris 5.11 需 class file version 69）
+ENV JAVA_HOME=/opt/java25
+ENV PATH="/opt/java25/bin:${PATH}"
+RUN set -eux; \
+    curl -fSL -o /tmp/java25.tar.gz \
+      "https://api.adoptium.net/v3/binary/latest/25/ga/linux/x64/jre/hotspot/normal/eclipse"; \
+    mkdir -p /opt/java25; \
+    tar -xzf /tmp/java25.tar.gz -C /opt/java25 --strip-components=1; \
+    rm -f /tmp/java25.tar.gz; \
+    ln -sf /opt/java25/bin/java /usr/local/bin/java; \
+    java -version
+
+# 下载并解包 Audiveris 5.11.0（五线谱 OMR 引擎），用 dpkg-deb -x 解到根目录
 ENV AUDIVERIS_VERSION=5.11.0
 RUN set -eux; \
     curl -fSL -o /tmp/audiveris.deb \
-      "https://github.com/Audiveris/audiveris/releases/download/${AUDIVERIS_VERSION}/Audiveris-${AUDIVERIS_VERSION}-ubuntu24.04-x86_64.deb"; \
-    dpkg-deb -x /tmp/audiveris.deb /tmp/audiveris_extract; \
-    mkdir -p /opt/audiveris; \
-    jar=$(find /tmp/audiveris_extract -name 'audiveris.jar' | head -n1); \
-    [ -n "$jar" ] && cp "$jar" /opt/audiveris/audiveris.jar; \
-    rm -rf /tmp/audiveris.deb /tmp/audiveris_extract; \
+      "https://github.com/Audiveris/audiveris/releases/download/${AUDIVERIS_VERSION}/Audiveris-${AUDIVERIS_VERSION}-ubuntu22.04-x86_64.deb"; \
+    dpkg-deb -x /tmp/audiveris.deb /; \
+    rm -f /tmp/audiveris.deb; \
+    if [ ! -x /usr/bin/audiveris ] && [ ! -x /usr/local/bin/audiveris ]; then \
+      appjar=$(find /usr /opt -name audiveris.jar 2>/dev/null | head -n1); \
+      [ -n "$appjar" ] && printf '#!/bin/sh\nexec java -Xmx1200m -jar "%s" "$@"\n' "$appjar" > /usr/local/bin/audiveris && chmod +x /usr/local/bin/audiveris; \
+    fi; \
     java -version
 WORKDIR /app
 ARG REQ_FILE=requirements.txt
@@ -129,6 +144,7 @@ Railway 检测到 Dockerfile 会自动用它构建；`run.py` 读取平台注入
 若你只需「识谱成曲」云端开箱即用（最常见的诉求），用本仓库提供的 **OMR-only 配置**即可：
 
 - `Dockerfile.omr`：除系统依赖 / Audiveris 外，依赖默认 `requirements-omr.txt`（**不含** torch / tensorflow / demucs / basic-pitch / librosa）；并预装 `tesseract-ocr` 系统二进制。Audiveris 用 ubuntu22.04 的 deb **直接 `dpkg-deb -x` 解包到根目录**——deb 自带的官方启动器（/usr/bin/audiveris）与完整应用（audiveris.jar + lib/）落到标准绝对路径，`find_audiveris()` 经 PATH 直接命中、classpath/主类由官方启动器正确设置；仅当官方启动器不在 PATH 时才生成 `java -jar` 兜底（JVM 自读 MANIFEST 主类）。这样彻底避免"只拷 jar 缺 lib"与"手动解析主类误读为 Audiveris"两个导致五线谱 OMR 在云端跑不起来的坑。
+- ⚠️ **Java 版本是五线谱 OMR 在云端能否跑起来的关键**：Audiveris 5.11.0 由 **Java 25**（class file version 69）编译，而 Debian 自带的 `default-jre-headless` 仅 Java 21（上限 65），会直接报 `UnsupportedClassVersionError: class file version 69.0`。因此两个 Dockerfile 都**不再装系统 JRE**，改为单独下载 Eclipse Temurin 25 JRE 并软链到 PATH（见 `Dockerfile` / `Dockerfile.omr` 的「Java 25 JRE」块）。若以后升级 Audiveris 报类似 class version 错误，先核对它需要的 Java 版本是否 ≥ 镜像里的 JRE。
 - `railway.json`：已把 `build.dockerfilePath` 设为 `Dockerfile.omr`，推上去 Railway 自动用它构建。
 
 **简谱 OCR 双保险**：镜像同时带 PaddleOCR（首选，中文更准）与 Tesseract（兜底，`requirements-omr.txt` 已含 `pytesseract`）。`omr_jianpu.ocr_image` 在 PaddleOCR 初始化/识别失败或识别为空时，自动回落 Tesseract；两者都不可用才给出清晰报错。故即便 PaddleOCR 的 3.x 在云上异常，OCR 仍开箱即用。
