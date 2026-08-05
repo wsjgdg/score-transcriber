@@ -56,6 +56,10 @@
   .msg.ok{background:rgba(70,224,192,.12);border:1px solid var(--ok);color:#c8fff2}
   .hidden{display:none}
   .copyBtn{background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer}
+  /* ===== 识谱：文件夹选择（识别文件夹、点击打开、不上传文件夹） ===== */
+  .omr-folder,.omr-file{padding:8px 10px;border-radius:9px;cursor:pointer;font-size:13.5px;background:#0e1226;border:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .omr-folder:hover,.omr-file:hover{border-color:var(--accent);background:#20264a}
+  .omr-file.sel{border-color:var(--ok);background:#16302b;color:#c8fff2}
   .footer{color:var(--muted);font-size:11.5px;text-align:center;margin-top:26px;line-height:1.7}
   .hist-item{display:flex;gap:12px;align-items:center;padding:10px 4px;border-bottom:1px solid var(--line);cursor:pointer;transition:.15s}
   .hist-item:active{background:#20264a}
@@ -214,6 +218,14 @@
       <span class="big" id="omrDropText">点击选择乐谱图片</span>
       <span class="small">支持 PNG / JPG / WEBP 等<br/>印刷清晰、排版规整的乐谱识别最佳<br/>也可直接把图片拖到此处上传</span>
     </label>
+    <button type="button" id="omrFolderBtn" class="copyBtn" style="margin-top:8px">📁 从文件夹选择图片…</button>
+    <div id="omrFolderPanel" class="hidden" style="margin-top:10px;border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--panel2)">
+      <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin-bottom:8px">
+        <span id="omrFolderPath" style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">未选择文件夹</span>
+        <button type="button" id="omrFolderUp" class="copyBtn">← 上一级</button>
+      </div>
+      <div id="omrFolderList" style="max-height:220px;overflow:auto;display:flex;flex-direction:column;gap:4px"></div>
+    </div>
     <textarea id="omrText" class="omr-text hidden" spellcheck="false" placeholder="在此粘贴 / 输入简谱文本，例如：1 2 3 4 | >5 >6 >7 | 0 0 | 3. 2. 1. |"></textarea>
     <div id="omrTextTools" class="hidden" style="margin:8px 0 0">
       <button type="button" id="omrTpl" class="copyBtn">填充模板</button>
@@ -255,6 +267,7 @@
       · <b>简谱</b>：本地 OCR（PaddleOCR / Tesseract）直接识别数字谱，自动还原音高、八度与节奏，立即出 MIDI / 五线谱 / 简谱并可播放。<br/>
       · <b>五线谱</b>：调用开源 OMR 引擎 Audiveris 把图片转 MusicXML 再解析；若未安装会在识别时报安装指引。<br/>
       · 识别结果与「音视频转乐谱」共用同一套渲染，可下载 MIDI / MusicXML、复制简谱。
+      · <b>从文件夹选图</b>：点「从文件夹选择图片…」可逐级打开文件夹、点选单张图片识别——只上传该图片，不会上传整个文件夹。
       · <b>手动输入</b>：无图片或图片识别不准时，点「手动输入」→「填充模板」，按模板内说明用文本写简谱，免 OCR 立即出谱。
     </div>
   </div>
@@ -469,10 +482,99 @@ function setOmrSource(mode){
   omrDrop.classList.toggle("hidden", text);
   omrText.classList.toggle("hidden", !text);
   omrTextTools.classList.toggle("hidden", !text);
+  // 切到手动输入时收起文件夹面板并复位模板按钮，避免状态残留
+  if(text){
+    omrFolderPanel.classList.add("hidden");
+    omrFolderBtn.style.display = "none";
+    _omrTplOn = false; omrTpl.textContent = "填充模板";
+  }else{
+    omrFolderBtn.style.display = _folderSupported ? "" : "none";
+  }
 }
 omrSrcImg.addEventListener("click", () => setOmrSource("img"));
 omrSrcText.addEventListener("click", () => setOmrSource("text"));
-omrTpl.addEventListener("click", () => { omrText.value = OMR_TEXT_TEMPLATE; });
+// 填充模板 ⇄ 撤销模板：点击填充写入模板并把按钮变“撤销模板”，再点击回退到填充前文本
+let _omrTplOn = false, _omrTplPrev = "";
+omrTpl.addEventListener("click", () => {
+  if(!_omrTplOn){
+    _omrTplPrev = omrText.value;
+    omrText.value = OMR_TEXT_TEMPLATE;
+    omrTpl.textContent = "撤销模板";
+    _omrTplOn = true;
+  }else{
+    omrText.value = _omrTplPrev || "";
+    omrTpl.textContent = "填充模板";
+    _omrTplOn = false;
+  }
+});
+
+// ===== 识谱：文件夹选择（识别文件夹、点击打开、不上传文件夹） =====
+// 仅把选中的单张图片作为上传目标，绝不直接上传文件夹本身（webkitdirectory 仅用于枚举）。
+const omrFolderBtn = $("omrFolderBtn"), omrFolderPanel = $("omrFolderPanel"),
+      omrFolderList = $("omrFolderList"), omrFolderPath = $("omrFolderPath"),
+      omrFolderUp = $("omrFolderUp");
+let _folderFiles = [], _folderRoot = "", _folderCur = "";
+const _folderSupported = (function(){ const i = document.createElement("input"); return "webkitdirectory" in i; })();
+
+omrFolderBtn.addEventListener("click", openFolderPicker);
+function openFolderPicker(){
+  const inp = document.createElement("input");
+  inp.type = "file";
+  inp.setAttribute("webkitdirectory", "");
+  inp.setAttribute("directory", "");
+  inp.addEventListener("change", () => {
+    _folderFiles = Array.from(inp.files || []);
+    if(!_folderFiles.length) return;
+    _folderRoot = (_folderFiles[0].webkitRelativePath || "").split("/")[0] || "文件夹";
+    _folderCur = "";
+    omrFolderPanel.classList.remove("hidden");
+    renderFolder();
+  });
+  inp.click();
+}
+function renderFolder(){
+  omrFolderPath.textContent = _folderRoot + (_folderCur ? " / " + _folderCur : "");
+  const prefix = _folderCur ? _folderCur + "/" : "";
+  const folders = new Set(), imgs = [];
+  for(const f of _folderFiles){
+    const rel = f.webkitRelativePath || f.name;
+    if(!rel.startsWith(prefix)) continue;
+    const rest = rel.slice(prefix.length);
+    if(rest.includes("/")) folders.add(rest.split("/")[0]);
+    else if(/^image\//.test(f.type) || /\.(png|jpe?g|webp|bmp|gif)$/i.test(f.name)) imgs.push(f);
+  }
+  let html = "";
+  for(const d of [...folders].sort()) html += `<div class="omr-folder" data-dir="${esc(d)}">📁 ${esc(d)}</div>`;
+  for(const f of imgs) html += `<div class="omr-file" data-name="${esc(f.name)}">🖼️ ${esc(f.name)}</div>`;
+  if(!html) html = '<div class="hint">此文件夹（及子文件夹）内没有找到图片文件。</div>';
+  omrFolderList.innerHTML = html;
+  omrFolderList.querySelectorAll(".omr-folder").forEach(el =>
+    el.addEventListener("click", () => { _folderCur = prefix + el.dataset.dir; renderFolder(); }));
+  omrFolderList.querySelectorAll(".omr-file").forEach(el =>
+    el.addEventListener("click", () => pickFolderImage(el.dataset.name)));
+}
+function pickFolderImage(name){
+  const prefix = _folderCur ? _folderCur + "/" : "";
+  const f = _folderFiles.find(x => (x.webkitRelativePath || x.name) === (prefix + name));
+  if(!f) return;
+  try{
+    const dt = new DataTransfer();
+    dt.items.add(f);
+    omrFile.files = dt.files;                 // 复用隐藏 file input
+    omrFile.dispatchEvent(new Event("change")); // 触发已选文件名更新
+    omrFolderList.querySelectorAll(".omr-file").forEach(el => el.classList.remove("sel"));
+    const cur = omrFolderList.querySelector('.omr-file[data-name="' + CSS.escape(name) + '"]');
+    if(cur) cur.classList.add("sel");
+  }catch(err){
+    showErr("当前浏览器不支持从文件夹选取单张图片，请改用「点击选择」。");
+  }
+}
+omrFolderUp.addEventListener("click", () => {
+  if(!_folderCur) return;
+  const parts = _folderCur.split("/"); parts.pop();
+  _folderCur = parts.join("/");
+  renderFolder();
+});
 omrGo.addEventListener("click", () => {
   if(omrSrcText.classList.contains("active")){
     const txt = omrText.value.trim();
@@ -523,7 +625,9 @@ document.querySelectorAll(".modeMenu .mi").forEach(el =>
 document.addEventListener("click", (e) => {
   if(!modeMenu.contains(e.target) && e.target !== modeTitle) modeMenu.classList.add("hidden");
 });
-setMode("audio");
+// 历史详情页“返回”会带 ?mode=omr/audio，打开时直接定位到对应模式（哪里的历史回哪里）
+const _initMode = new URLSearchParams(location.search).get("mode");
+setMode(_initMode === "omr" ? "omr" : "audio");
 
 // ---- 历史记录 ----
 function esc(s){

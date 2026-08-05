@@ -49,7 +49,7 @@
 <div class="wrap">
   <h1>🎼 历史记录查看</h1>
   <div class="sub">这是一条历史转谱记录的独立页面，可回看乐谱、播放原音频与识别钢琴谱、并下载产物。</div>
-  <a class="back" href="/app.html">← 返回上传页 / 历史列表</a>
+  <a class="back" id="backLink" href="/app.html">← 返回上传页 / 历史列表</a>
   <div id="error" class="msg err hidden"></div>
   <div id="result" class="card hidden"></div>
 </div>
@@ -69,6 +69,10 @@ if(!id){
 }else{
   fetch("/api/history/" + encodeURIComponent(id)).then(r => r.json()).then(d => {
     if(d.status !== "ok" || !d.record){ showErr(d.msg || "未找到该历史记录。"); return; }
+    // 返回时回到该记录所属模式（识谱成曲 ⇄ 音视频转乐谱），而非固定回到音频模式
+    var mode = (d.record.opts && d.record.opts.mode) || "audio";
+    var back = document.getElementById("backLink");
+    if(back) back.href = "/app.html?mode=" + encodeURIComponent(mode);
     renderResult(d.record);
   }).catch(() => {
     showErr("加载历史记录失败，请检查网络后重试。");

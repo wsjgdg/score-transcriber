@@ -197,6 +197,7 @@ async def api_transcribe(file: UploadFile = File(...),
 
     # 整理本次优化选项，便于历史回看展示
     opts = {
+        "mode": "audio",
         "separate": separate, "separate_target": separate_target,
         "high_conf_only": high_conf_only, "auto_bpm": auto_bpm,
         "smart_denoise": smart_denoise, "backend": backend,
