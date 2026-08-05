@@ -128,8 +128,10 @@ Railway 检测到 Dockerfile 会自动用它构建；`run.py` 读取平台注入
 
 若你只需「识谱成曲」云端开箱即用（最常见的诉求），用本仓库提供的 **OMR-only 配置**即可：
 
-- `Dockerfile.omr`：除系统依赖 / Audiveris 外，依赖默认 `requirements-omr.txt`（**不含** torch / tensorflow / demucs / basic-pitch / librosa）。
+- `Dockerfile.omr`：除系统依赖 / Audiveris 外，依赖默认 `requirements-omr.txt`（**不含** torch / tensorflow / demucs / basic-pitch / librosa）；并预装 `tesseract-ocr` 系统二进制。
 - `railway.json`：已把 `build.dockerfilePath` 设为 `Dockerfile.omr`，推上去 Railway 自动用它构建。
+
+**简谱 OCR 双保险**：镜像同时带 PaddleOCR（首选，中文更准）与 Tesseract（兜底，`requirements-omr.txt` 已含 `pytesseract`）。`omr_jianpu.ocr_image` 在 PaddleOCR 初始化/识别失败或识别为空时，自动回落 Tesseract；两者都不可用才给出清晰报错。故即便 PaddleOCR 的 3.x 在云上异常，OCR 仍开箱即用。
 
 推仓库后在 Railway 触发一次重新部署即可，无需任何额外配置（`run.py` 读取平台注入的 `PORT`）。
 需要完整「音视频转乐谱」时，再把 `dockerfilePath` 改回 `Dockerfile` 并准备更大构建资源。

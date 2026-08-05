@@ -14,6 +14,7 @@ FROM python:3.11-slim
 # - default-jre-headless: 五线谱 OMR 引擎 Audiveris（Java）运行所需
 # - libgomp1 / libgl1 / libsm6 / libxext6 / libxrender1 / libglib2.0-0:
 #       paddlepaddle / opencv 运行所需的 .so
+# - tesseract-ocr: 简谱 OCR 的兜底引擎（PaddleOCR 不可用时自动回落，系统二进制极轻、云端绝不 OOM）
 # - curl / ca-certificates: 下载 Audiveris 发行包
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
@@ -26,6 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxext6 \
     libxrender1 \
     libglib2.0-0 \
+    tesseract-ocr \
     curl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*

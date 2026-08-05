@@ -14,5 +14,8 @@ matplotlib
 soundfile         # 顶层硬依赖（transcriber.py: import soundfile）
 music21==10.5.0    # 解析 MusicXML（五线谱 OMR 产物）
 pretty_midi==0.2.11
-paddleocr          # 简谱 OCR（中文印刷体更准）
+# 简谱 OCR：PaddleOCR 为首选（中文印刷体更准）；PyPI 已下架 2.x，仅剩 3.x，
+# 若 3.x 运行时异常，omr_jianpu.ocr_image 会自动回落到 Tesseract，不影响开箱即用。
+paddleocr
+pytesseract        # PaddleOCR 不可用时的兜底 OCR（需系统 tesseract-ocr 二进制，见 Dockerfile）
 pillow             # PaddleOCR / 图像处理依赖
