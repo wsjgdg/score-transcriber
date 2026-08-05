@@ -164,6 +164,113 @@ def f0_octave_correct(note_list, wav_path, sr: int = SR, y=None):
     return out, shifted
 
 
+def build_outputs(note_list, out_dir: str, bpm: float = 120, beats: int = 4,
+                 key: str = DEFAULT_KEY, fine_quant: bool = False,
+                 rms_vel: bool = False, lyrics_tokens=None, beat_denom: int = 4,
+                 on_progress=None) -> dict:
+    """把已识别的音符表渲染成完整结果（MIDI / 钢琴卷帘 / 简谱 / 五线谱 / MusicXML / 合成音频）。
+    被 process()（音视频转乐谱）与 OMR（识谱成曲）共用，避免重复渲染逻辑。
+    返回的 result 字典与 process() 同构（不含原音频，OMR 无源音频），可直接喂给前端 renderResult。
+    note_list: [(onset_sec, offset_sec, pitch_midi, velocity_0_1, bends), ...]
+    """
+    import os
+    os.makedirs(out_dir, exist_ok=True)
+    stem = "score"
+    toff, key_label, _l, _sh, _d = resolve_key(key)
+
+    if callable(on_progress):
+        on_progress("生成 MIDI", 60)
+    midi_path = os.path.join(out_dir, stem + ".mid")
+    try:
+        pm = pretty_midi.PrettyMIDI()
+        inst = pretty_midi.Instrument(program=0)  # Acoustic Grand Piano
+        for (o, s, p, v, _b) in note_list:
+            if p < 0 or s <= o:
+                continue
+            nv = max(1, min(127, int(round(v * 127))))
+            inst.notes.append(pretty_midi.Note(
+                velocity=nv, pitch=int(round(p)),
+                start=float(o), end=float(s)))
+        pm.instruments.append(inst)
+        pm.write(midi_path)
+    except Exception as e:
+        print("MIDI 写入失败:", e)
+        midi_path = None
+    files = {}
+    if midi_path:
+        files["midi"] = midi_path
+
+    if callable(on_progress):
+        on_progress("生成钢琴卷帘", 72)
+    roll_path = os.path.join(out_dir, stem + "_pianoroll.png")
+    if save_pianoroll(note_list, roll_path, show_confidence=False):
+        files["pianoroll"] = roll_path
+
+    if callable(on_progress):
+        on_progress("生成简谱", 80)
+    groups = _build_groups(note_list, bpm, fine=fine_quant)
+    jianpu = build_jianpu(note_list, bpm, beats, beat_denom=beat_denom,
+                          groups=groups, key=key)
+
+    if callable(on_progress):
+        on_progress("生成五线谱", 90)
+    ly = build_lily(groups, bpm, beats, lyrics=lyrics_tokens,
+                    beat_denom=beat_denom, key=key)
+    staff_path = os.path.join(out_dir, stem + "_staff.png")
+    if render_lily_png(ly, staff_path):
+        files["staff"] = staff_path
+
+    if callable(on_progress):
+        on_progress("生成 MusicXML", 95)
+    xml_path = os.path.join(out_dir, stem + ".musicxml")
+    if save_musicxml(note_list, xml_path, bpm, beats, lyrics=lyrics_tokens,
+                     beat_denom=beat_denom, groups=groups, key=key):
+        files["musicxml"] = xml_path
+
+    # 合成可播放音频（OMR 无原音频，仅合成钢琴谱）
+    score_wav = os.path.join(out_dir, stem + "_score.wav")
+    synth_ok = False
+    if FLUIDSYNTH_OK and midi_path:
+        try:
+            synth_ok = render_midi_fluidsynth(midi_path, score_wav, SR)
+        except Exception as e:
+            print("真实音源合成失败，回退基础合成:", e)
+    if not synth_ok and midi_path:
+        synth_ok = synth_score(note_list, score_wav)
+    if synth_ok:
+        score_mp3 = os.path.join(out_dir, stem + "_score.mp3")
+        try:
+            subprocess.run(["ffmpeg", "-y", "-i", score_wav, "-vn", "-ar", "44100",
+                            "-b:a", "128k", score_mp3],
+                           check=True, capture_output=True, text=True)
+            files["score_audio"] = score_mp3
+        except Exception as e:
+            print("钢琴谱音频转码失败:", e)
+        try:
+            os.remove(score_wav)
+        except OSError:
+            pass
+
+    duration = max((s for (_o, s, _p, _v, _b) in note_list), default=0.0)
+    stats = {
+        "num_notes": len([n for n in note_list if n[2] >= 0]),
+        "num_events": len(groups),
+        "duration_sec": round(duration, 2),
+        "bpm": bpm,
+        "bpm_estimated": False,
+        "beats_per_bar": beats,
+        "beats_estimated": False,
+        "beats_denom": beat_denom,
+        "staff_truncated": len(groups) > MAX_STAFF_EVENTS,
+        "staff_max_events": MAX_STAFF_EVENTS,
+        "key": key_label,
+        "key_raw": key,
+        "source": "omr",
+    }
+    return {"status": "ok", "stats": stats, "files": files, "jianpu": jianpu,
+            "note_list": None}
+
+
 # ----------------------------------------------------------------------------
 # 1. 音频提取（视频抽音轨 / 任意音频转标准 wav）
 # ----------------------------------------------------------------------------

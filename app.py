@@ -17,6 +17,8 @@ import tempfile
 import numpy as np
 import soundfile as sf
 import transcriber
+import omr_jianpu
+import omr_staff
 
 BASE = Path(__file__).resolve().parent
 UPLOAD = BASE / "uploads"
@@ -308,15 +310,116 @@ def _run_job(uid, src, out_dir, bpm, beats, min_velocity, separate,
                             "files": files, "jianpu": res["jianpu"]})
 
 
+# ---------------------------------------------------------------------------
+# 识谱成曲（OMR）：图片 → 音符表（简谱用本地 OCR，五线谱用 Audiveris）
+# 复用 _JOBS 进度机制：立即返回 job_id，前端轮询 /api/progress/{job_id}。
+# ---------------------------------------------------------------------------
+@app.post("/api/omr")
+async def api_omr(file: UploadFile = File(...),
+                  notation: str = Form("jianpu"),
+                  bpm: float = Form(120),
+                  beats: int = Form(4),
+                  key: str = Form("C")):
+    ext = Path(file.filename or "x.png").suffix.lower()
+    if ext not in (".png", ".jpg", ".jpeg", ".bmp", ".webp", ".gif"):
+        return JSONResponse({"status": "error", "msg": f"不支持的图片格式：{ext}"})
+    note_type = "staff" if notation == "staff" else "jianpu"
+    uid = uuid.uuid4().hex
+    src = UPLOAD / f"{uid}{ext}"
+    with open(src, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    bpm = max(40.0, min(300.0, float(bpm)))
+    beats = max(1, min(12, int(beats)))
+    key = key or "C"
+    opts = {"mode": "omr", "notation": note_type, "bpm": bpm,
+            "beats": beats, "key": key}
+    with _JOBS_LOCK:
+        if len(_JOBS) > 300:
+            old_ids = [k for k in _JOBS if _JOBS[k]["status"] in ("done", "error")]
+            for k in old_ids[: len(_JOBS) - 300]:
+                _JOBS.pop(k, None)
+        _JOBS[uid] = {"status": "queued", "stage": "排队中", "progress": 0,
+                      "result": None, "error": None}
+    threading.Thread(
+        target=_run_omr_job,
+        args=(uid, str(src), str(OUT / uid), note_type, bpm, beats, key, opts, file.filename),
+        daemon=True,
+    ).start()
+    return {"status": "queued", "job_id": uid}
+
+
+def _run_omr_job(uid, src, out_dir, note_type, bpm, beats, key, opts, filename):
+    def _report(stage, pct):
+        with _JOBS_LOCK:
+            j = _JOBS.get(uid)
+            if j:
+                j["stage"] = stage
+                j["progress"] = pct
+
+    def _finish(status, result=None, error=None):
+        with _JOBS_LOCK:
+            _JOBS[uid] = {"status": status, "stage": "", "progress": 100,
+                          "result": result, "error": error}
+        try:
+            os.remove(src)
+        except OSError:
+            pass
+
+    try:
+        if note_type == "staff":
+            note_list, meta = omr_staff.recognize_staff(src, bpm=bpm, beats=beats, key=key)
+        else:
+            note_list, meta = omr_jianpu.recognize_jianpu(src, bpm=bpm, beats=beats, key=key)
+        if not note_list:
+            _finish("error", error="未从图片中识别出音符。请换一张印刷清晰、排版规整的乐谱再试。")
+            return
+        res = transcriber.build_outputs(note_list, out_dir, bpm=bpm, beats=beats,
+                                        key=key, on_progress=_report)
+        res.pop("note_list", None)
+    except transcriber.BackendUnavailable as e:
+        _finish("error", error=str(e))
+        return
+    except Exception as e:
+        _finish("error", error=f"识谱失败：{e}")
+        return
+
+    if res.get("status") != "ok" or not res.get("files"):
+        _finish("error", error="识谱完成但未生成任何乐谱文件，请重试。")
+        return
+
+    def to_url(p):
+        return "/outputs/" + os.path.relpath(p, str(OUT)).replace(os.sep, "/")
+
+    files = {k: to_url(v) for k, v in res.get("files", {}).items()}
+
+    record = {
+        "id": uid,
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "filename": filename,
+        "bpm": bpm,
+        "beats": beats,
+        "denoise_threshold": 0,
+        "opts": opts,
+        "stats": res["stats"],
+        "files": files,
+        "jianpu": res["jianpu"],
+    }
+    _add_history(record)
+    _finish("done", result={"status": "ok", "stats": res["stats"],
+                            "files": files, "jianpu": res["jianpu"]})
+
+
 @app.get("/api/caps")
 def api_caps():
     # 运行时能力探测：前端据此自适应默认选项（如环境无 demucs 则默认不分离并提示）
+    import importlib.util
+    def _has(mod):
+        return importlib.util.find_spec(mod) is not None
+    omr_jianpu_ok = _has("paddleocr") or _has("pytesseract")
+    omr_staff_ok = omr_staff.find_audiveris() is not None
     return {"demucs": transcriber._DEMUCS_OK, "mt3": transcriber.MT3_OK,
-            "fluidsynth": transcriber.FLUIDSYNTH_OK, "whisper": transcriber.WHISPER_OK}
-
-
-@app.get("/api/progress/{job_id}")
-def api_progress(job_id: str):
+            "fluidsynth": transcriber.FLUIDSYNTH_OK, "whisper": transcriber.WHISPER_OK,
+            "omr_jianpu": omr_jianpu_ok, "omr_staff": omr_staff_ok}
     # 前端轮询拿转录进度与最终结果（长任务避免同步阻塞被代理掐断）。
     with _JOBS_LOCK:
         j = _JOBS.get(job_id)

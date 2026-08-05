@@ -65,14 +65,34 @@
   .compare-cols{display:flex;gap:16px;flex-wrap:wrap}
   .pcol{flex:1;min-width:240px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px}
   .pcol h4{margin:0 0 8px;font-size:13px;color:var(--muted)}
+  /* ===== 顶部模式切换 ===== */
+  .topbar{display:flex;align-items:center;gap:10px;position:relative}
+  .modeTitle{font-size:22px;margin:0;letter-spacing:.5px;cursor:pointer;user-select:none;
+    display:inline-flex;align-items:center;gap:8px}
+  .modeTitle .caret{font-size:13px;color:var(--muted);transition:.15s}
+  .modeTitle:hover{color:#fff}
+  .modeMenu{position:absolute;top:100%;left:0;margin-top:8px;background:var(--panel);border:1px solid var(--line);
+    border-radius:12px;padding:6px;min-width:220px;box-shadow:0 12px 40px rgba(0,0,0,.4);z-index:20}
+  .modeMenu .mi{padding:10px 12px;border-radius:9px;cursor:pointer;font-size:14px;color:var(--text)}
+  .modeMenu .mi:hover{background:var(--panel2)}
+  .modeMenu .mi small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px}
+  .modeMenu .mi.active{background:linear-gradient(135deg,var(--accent),#8a6cff);color:#fff}
+  .modeMenu .mi.active small{color:rgba(255,255,255,.8)}
+  .hidden{display:none}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>🎼 音视频转乐谱</h1>
-  <div class="sub">上传音频或视频，自动识别音高与节奏，生成五线谱、钢琴卷帘图、简谱与可下载的 MIDI / MusicXML，并可播放原音频与识别出的钢琴谱。</div>
+  <div class="topbar">
+    <h1 class="modeTitle" id="modeTitle">🎼 音视频转乐谱 <span class="caret">▾</span></h1>
+    <div class="modeMenu hidden" id="modeMenu">
+      <div class="mi active" data-mode="audio">🎵 音视频转乐谱<small>上传音频/视频 → 乐谱</small></div>
+      <div class="mi" data-mode="omr">📷 识谱成曲<small>上传乐谱图片 → 可播放音乐（简谱/五线谱）</small></div>
+    </div>
+  </div>
+  <div class="sub" id="subText">上传音频或视频，自动识别音高与节奏，生成五线谱、钢琴卷帘图、简谱与可下载的 MIDI / MusicXML，并可播放原音频与识别出的钢琴谱。</div>
 
-  <div class="card">
+  <div class="card" id="audioMode">
     <!-- 关键：<label> 直接包裹 file 控件。iOS Safari / Android 点 label 必弹选择器 -->
     <label class="upload-label" id="drop">
       <input id="file" type="file" accept="audio/*,video/*" />
@@ -178,6 +198,52 @@
     </div>
   </div>
 
+  <div class="card hidden" id="omrMode">
+    <div class="adv-title">识谱成曲 · 上传乐谱图片（简谱 / 五线谱）</div>
+    <label class="upload-label" id="omrDrop">
+      <input id="omrFile" type="file" accept="image/*" />
+      <span class="big" id="omrDropText">点击选择乐谱图片</span>
+      <span class="small">支持 PNG / JPG / WEBP 等<br/>印刷清晰、排版规整的乐谱识别最佳</span>
+    </label>
+    <div class="row">
+      <label class="fld" style="min-width:200px">谱式
+        <select id="omrNotation">
+          <option value="jianpu">简谱（本地 OCR 识别）</option>
+          <option value="staff">五线谱（需安装 Audiveris）</option>
+        </select>
+      </label>
+      <label class="fld">速度 BPM（可选）
+        <input id="omrBpm" type="number" value="120" min="40" max="300" inputmode="numeric" />
+      </label>
+      <label class="fld">每小节拍数（可选）
+        <input id="omrBeats" type="number" value="4" min="1" max="12" inputmode="numeric" />
+      </label>
+      <label class="fld" style="min-width:200px">选调 / 移调
+        <select id="omrKey">
+          <option value="C">原调 (1=C)</option>
+          <option value="bD">♭D（降2）</option>
+          <option value="D">D（升2）</option>
+          <option value="bE">♭E（降3）</option>
+          <option value="E">E（升4）</option>
+          <option value="F">F（升5）</option>
+          <option value="#F">♯F（升6）</option>
+          <option value="G">G（降5）</option>
+          <option value="bA">♭A（降4）</option>
+          <option value="A">A（降3）</option>
+          <option value="bB">♭B（降2）</option>
+          <option value="B">B（降1）</option>
+        </select>
+      </label>
+      <button id="omrGo" class="go">开始识别 →</button>
+    </div>
+    <div id="omrCaps" class="hint"></div>
+    <div class="hint">
+      · <b>简谱</b>：本地 OCR（PaddleOCR / Tesseract）直接识别数字谱，自动还原音高、八度与节奏，立即出 MIDI / 五线谱 / 简谱并可播放。<br/>
+      · <b>五线谱</b>：调用开源 OMR 引擎 Audiveris 把图片转 MusicXML 再解析；若未安装会在识别时报安装指引。<br/>
+      · 识别结果与「音视频转乐谱」共用同一套渲染，可下载 MIDI / MusicXML、复制简谱。
+    </div>
+  </div>
+
   <div class="card" id="historyCard">
     <div style="display:flex;align-items:center;gap:10px">
       <h3 style="margin:0">历史记录 <span class="tag">自动保存</span></h3>
@@ -246,26 +312,70 @@ fetch("/api/caps").then(r => r.json()).then(c => {
     const h = $("asrHint");
     if (h) h.textContent = "当前托管环境未预装 Whisper，自动识别将报错；在自有 GPU/服务器部署并安装 faster-whisper 后可启用。也可用上方文本框手动填词。";
   }
+  // 识谱成曲能力提示
+  const oc = $("omrCaps");
+  if (oc) {
+    if (c.omr_jianpu) {
+      let t = "✓ 简谱 OCR 可用（PaddleOCR / Tesseract 已安装）。";
+      if (!c.omr_staff) t += " 五线谱引擎 Audiveris 未安装，选「五线谱」时会提示如何安装。";
+      oc.textContent = t;
+    } else {
+      oc.textContent = "⚠ 未检测到 OCR 引擎（PaddleOCR / Tesseract）。简谱识别将失败，请安装其一；五线谱另需 Audiveris。";
+    }
+  }
 }).catch(() => {});
 
 function showErr(m){ const e=$("error"); e.textContent=m; e.classList.remove("hidden"); }
 function hideErr(){ $("error").classList.add("hidden"); }
 
-go.addEventListener("click", async () => {
+// 通用任务提交 + 进度轮询（音视频转乐谱 / 识谱成曲 共用）
+function runJob(url, buildForm, btn, busyText, timeoutMs){
+  hideErr(); $("result").classList.add("hidden");
+  $("progressCard").classList.remove("hidden");
+  btn.disabled = true; const old = btn.textContent; btn.textContent = busyText;
+  const progCard = $("progressCard"), bar = $("progBar"), pct = $("progPct"), stage = $("progStage");
+  bar.style.width = "2%"; pct.textContent = "2%"; stage.textContent = "已提交，排队中…";
+  let done = false, deadline = Date.now() + (timeoutMs || 300000);
+  (async () => {
+    try{
+      const fd = buildForm();
+      const r = await fetch(url, {method:"POST", body: fd});
+      const data = await r.json();
+      if(data.status !== "queued"){ showErr(data.msg || "提交失败"); return; }
+      const jobId = data.job_id;
+      while(Date.now() < deadline){
+        await new Promise(res => setTimeout(res, 800));
+        const pr = await fetch("/api/progress/" + encodeURIComponent(jobId));
+        const pj = await pr.json();
+        if(pj.status === "done"){
+          if(pj.result && pj.result.status === "ok"){ renderResult(pj.result); fetchHistory(); }
+          else showErr("处理失败，请重试。");
+          done = true; break;
+        }else if(pj.status === "error"){ showErr(pj.error || "处理失败"); done = true; break; }
+        else if(pj.status === "not_found"){ showErr("任务已过期，请重试。"); done = true; break; }
+        const pp = Math.max(2, Math.min(99, pj.progress || 0));
+        bar.style.width = pp + "%"; pct.textContent = pp + "%";
+        stage.textContent = pj.stage || "处理中…";
+      }
+      if(!done) showErr("处理超时：耗时过长。请换更短的内容或稍后重试。");
+    }catch(err){
+      showErr("网络中断或请求失败，请检查网络后重试。");
+    }finally{
+      progCard.classList.add("hidden");
+      btn.disabled = false; btn.textContent = old;
+    }
+  })();
+}
+
+// 音视频转乐谱
+go.addEventListener("click", () => {
   const f = fileInput.files[0];
   if(!f){ showErr("请先选择（点击上方框）一个音频或视频文件。"); return; }
   if(f.size > 30*1024*1024){
     showErr("文件超过 30MB，预览环境可能超时断开。建议裁剪到 1 分钟内的片段再试。");
     return;
   }
-  hideErr(); $("result").classList.add("hidden");
-  $("progressCard").classList.remove("hidden");
-  go.disabled = true; const old = go.textContent; go.textContent = "排队转录中…";
-  const progCard = $("progressCard"), bar = $("progBar"), pct = $("progPct"), stage = $("progStage");
-  bar.style.width = "2%"; pct.textContent = "2%"; stage.textContent = "已提交，排队中…";
-
-  let jobId = null, done = false, deadline = Date.now() + 300000;
-  try{
+  runJob("/api/transcribe", () => {
     const fd = new FormData();
     fd.append("file", f);
     fd.append("bpm", $("bpm").value || 120);
@@ -288,42 +398,52 @@ go.addEventListener("click", async () => {
     fd.append("key", $("optKey").value || "C");
     fd.append("octave_shift", $("optOctave").value || "0");
     fd.append("f0_octave_fix", $("optF0").checked ? "true" : "false");
-    const r = await fetch("/api/transcribe", {method:"POST", body: fd});
-    const data = await r.json();
-    if(data.status !== "queued"){ showErr(data.msg || "提交失败"); return; }
-    jobId = data.job_id;
-    // 轮询进度，直到完成或出错
-    while(Date.now() < deadline){
-      await new Promise(res => setTimeout(res, 800));
-      const pr = await fetch("/api/progress/" + encodeURIComponent(jobId));
-      const pj = await pr.json();
-      if(pj.status === "done"){
-        if(pj.result && pj.result.status === "ok"){
-          renderResult(pj.result);
-          fetchHistory();
-        }else{
-          showErr("处理失败，请重试。");
-        }
-        done = true; break;
-      }else if(pj.status === "error"){
-        showErr(pj.error || "处理失败");
-        done = true; break;
-      }else if(pj.status === "not_found"){
-        showErr("任务已过期，请重试。");
-        done = true; break;
-      }
-      const pp = Math.max(2, Math.min(99, pj.progress || 0));
-      bar.style.width = pp + "%"; pct.textContent = pp + "%";
-      stage.textContent = pj.stage || "转录中…";
-    }
-    if(!done) showErr("处理超时：转录耗时过长。请尝试更短的音视频片段（建议 1 分钟内），或稍后重试。");
-  }catch(err){
-    showErr("网络中断或请求失败。请检查网络后重试；若文件较大，请换更短的片段。");
-  }finally{
-    progCard.classList.add("hidden");
-    go.disabled = false; go.textContent = old;
-  }
+    return fd;
+  }, go, "排队转录中…");
 });
+
+// 识谱成曲
+const omrFile = $("omrFile"), omrGo = $("omrGo"), omrDropText = $("omrDropText");
+omrFile.addEventListener("change", () => {
+  if(omrFile.files[0]) omrDropText.textContent = "已选择：" + omrFile.files[0].name;
+});
+omrGo.addEventListener("click", () => {
+  const f = omrFile.files[0];
+  if(!f){ showErr("请先选择一张乐谱图片（简谱或五线谱）。"); return; }
+  runJob("/api/omr", () => {
+    const fd = new FormData();
+    fd.append("file", f);
+    fd.append("notation", $("omrNotation").value || "jianpu");
+    fd.append("bpm", $("omrBpm").value || 120);
+    fd.append("beats", $("omrBeats").value || 4);
+    fd.append("key", $("omrKey").value || "C");
+    return fd;
+  }, omrGo, "排队识别中…");
+});
+
+// 顶部模式切换（音视频转乐谱 ⇄ 识谱成曲）
+const modeTitle = $("modeTitle"), modeMenu = $("modeMenu");
+function setMode(m){
+  $("audioMode").classList.toggle("hidden", m !== "audio");
+  $("omrMode").classList.toggle("hidden", m !== "omr");
+  modeMenu.classList.add("hidden");
+  document.querySelectorAll(".modeMenu .mi").forEach(el =>
+    el.classList.toggle("active", el.dataset.mode === m));
+  if(m === "omr"){
+    modeTitle.firstChild.textContent = "📷 识谱成曲 ";
+    $("subText").textContent = "上传乐谱图片（简谱用本地 OCR、五线谱用 Audiveris），自动还原音高与节奏，生成可播放的 MIDI / 五线谱 / 简谱。";
+  }else{
+    modeTitle.firstChild.textContent = "🎼 音视频转乐谱 ";
+    $("subText").textContent = "上传音频或视频，自动识别音高与节奏，生成五线谱、钢琴卷帘图、简谱与可下载的 MIDI / MusicXML，并可播放原音频与识别出的钢琴谱。";
+  }
+}
+modeTitle.addEventListener("click", (e) => { e.stopPropagation(); modeMenu.classList.toggle("hidden"); });
+document.querySelectorAll(".modeMenu .mi").forEach(el =>
+  el.addEventListener("click", () => setMode(el.dataset.mode)));
+document.addEventListener("click", (e) => {
+  if(!modeMenu.contains(e.target) && e.target !== modeTitle) modeMenu.classList.add("hidden");
+});
+setMode("audio");
 
 // ---- 历史记录 ----
 function esc(s){

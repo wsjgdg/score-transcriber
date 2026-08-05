@@ -76,6 +76,29 @@ basic-pitch 官方评测大致水平：
 
 > 对齐为「一对一 / 按时间最近」的轻量方案，适合主旋律与歌词基本同步的歌曲。若某段是长音拖腔（一个音跨多字），仍需手动微调歌词文本框。
 
+## 识谱成曲（图片识别 OMR）
+
+除"听声音转谱"外，本工具也能**识别乐谱图片**生成可播放/可下载的谱。点击顶部「🎼 音视频转乐谱」标题旁的 ▾，在弹出列表里切到「📷 识谱成曲」，即可上传乐谱图片，支持两种记谱法：
+
+- **简谱（numbered notation）**：本地 OCR（PaddleOCR 或 Tesseract）识别数字与装饰符号，纯启发式解析，无需额外重型引擎。
+- **五线谱（staff）**：接入开源 OMR 引擎 **Audiveris**（Java）把图片转成 MusicXML，再用 music21 解析；环境未装 Audiveris 时接口会返回友好提示与安装指引，而非静默失败。
+
+### 使用步骤
+1. 顶部标题旁点 ▾ → 选「📷 识谱成曲」。
+2. 选图片（支持 `png/jpg/jpeg/webp/bmp`，建议清晰、横排、印刷体）。
+3. 选记谱法（简谱 / 五线谱），填 BPM、拍号、选调（与转谱一致）。
+4. 点「开始识谱」，约数秒出结果。
+
+### 产出
+与"音视频转乐谱"**完全一致**的产出管线（复用 `transcriber.build_outputs`）：五线谱 PNG、钢琴卷帘、简谱、MIDI、MusicXML、以及**合成试听**（由谱面用 fluidsynth/基础合成出声）。注意 OMR 模式**没有原音频**，试听播放的是识别出的谱面本身。
+
+### 引擎依赖
+- **简谱 OCR**：二选一 —— `pip install paddleocr`（中文印刷体更准）或 `pip install pytesseract`（另需系统装 `tesseract-ocr`）。两者皆无则报 `BackendUnavailable`。
+- **五线谱 OMR**：需自行安装 **Audiveris**（Java 11+），把 `audiveris`/`Audiveris` 可执行文件加入 PATH，或把 `audiveris.jar` 放到 `/opt/audiveris`、`~/audiveris`、`C:\Program Files\Audiveris` 等目录。运行时自动探测；缺失则提示安装。解析 MusicXML 复用上方已列出的 `music21`。
+
+### 局限
+OMR 为启发式实现，**针对印刷清晰、排版规整**的乐谱效果最好；手写、花哨字体、竖排或带复杂装饰的谱可能识别不准。简谱解析核心 `parse_jianpu_glyphs` 是纯函数（八度点/减时线/附点规则见其 docstring），可独立单测（`test_omr_jianpu.py`）。识别结果建议导出到 MuseScore 人工校对。
+
 ## 源码下载
 部署后的分享链接提供 `GET /download/source` 路由，可直接下载本项目完整源码 zip（页面底部「⬇ 下载本项目完整源码」）。
 
@@ -84,7 +107,10 @@ basic-pitch 官方评测大致水平：
 app.py             FastAPI 应用（路由 + 上传接口，含 denoise_threshold 浮点参数）
 run.py             统一启动入口（读 PORT 环境变量，默认 8000）
 transcriber.py     核心：音视频抽取、转录、响应强度/降噪、乐谱/简谱/带响应强度标注的钢琴卷帘生成
-static/app.html    前端上传与结果展示页（含响应强度提示、可调降噪阈值滑块）
+omr_jianpu.py      识谱成曲 · 简谱图片识别（OCR + 纯函数字形解析 parse_jianpu_glyphs）
+omr_staff.py       识谱成曲 · 五线谱图片识别（Audiveris OMR → MusicXML → music21）
+test_omr_jianpu.py 简谱字形解析单元测试（纯函数，CI 运行）
+static/app.html    前端上传与结果展示页（含响应强度提示、可调降噪阈值滑块、识谱成曲模式切换）
 requirements.txt   Python 运行期依赖（部署/沙箱用，含重 ML 依赖）
 requirements-ci.txt CI 轻量依赖（import 检查 + 路由健康检查 + 单测；不装 basic-pitch/torch 等重依赖）
 Dockerfile         Docker 部署（含 ffmpeg/lilypond/fonts-noto-cjk/fluidsynth/demucs 系统包与依赖）
