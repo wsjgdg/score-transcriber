@@ -81,7 +81,7 @@ basic-pitch 官方评测大致水平：
 除"听声音转谱"外，本工具也能**识别乐谱图片**生成可播放/可下载的谱。点击顶部「🎼 音视频转乐谱」标题旁的 ▾，在弹出列表里切到「📷 识谱成曲」，即可上传乐谱图片，支持两种记谱法：
 
 - **简谱（numbered notation）**：本地 OCR（PaddleOCR 或 Tesseract）识别数字与装饰符号，纯启发式解析，无需额外重型引擎。
-- **五线谱（staff）**：接入开源 OMR 引擎 **Audiveris**（Java）把图片转成 MusicXML，再用 music21 解析；环境未装 Audiveris 时接口会返回友好提示与安装指引，而非静默失败。
+- **五线谱（staff）**：接入开源 OMR 引擎 **Audiveris**（Java）把图片转成 MusicXML，再用 music21 解析；环境未装 Audiveris 时接口会返回友好提示与安装指引，而非静默失败。**Docker / 云端部署镜像已预装 Java + Audiveris 5.11.0**，推到 Railway/Render 即开箱可用，无需手动装引擎。
 
 ### 使用步骤
 1. 顶部标题旁点 ▾ → 选「📷 识谱成曲」。
@@ -94,7 +94,7 @@ basic-pitch 官方评测大致水平：
 
 ### 引擎依赖
 - **简谱 OCR**：二选一 —— `pip install paddleocr`（中文印刷体更准）或 `pip install pytesseract`（另需系统装 `tesseract-ocr`）。两者皆无则报 `BackendUnavailable`。
-- **五线谱 OMR**：需自行安装 **Audiveris**（Java 11+），把 `audiveris`/`Audiveris` 可执行文件加入 PATH，或把 `audiveris.jar` 放到 `/opt/audiveris`、`~/audiveris`、`C:\Program Files\Audiveris` 等目录。运行时自动探测；缺失则提示安装。解析 MusicXML 复用上方已列出的 `music21`。
+- **五线谱 OMR**：需 **Audiveris**（Java 11+）。本地裸跑时把 `audiveris`/`Audiveris` 可执行文件加入 PATH，或把 `audiveris.jar` 放到 `/opt/audiveris`、`~/audiveris`、`C:\Program Files\Audiveris` 等目录；运行时自动探测，缺失则提示安装。解析 MusicXML 复用上方已列出的 `music21`。**Docker / 云端镜像已自动预装（Java + audiveris.jar @ /opt/audiveris），无需手动配置。**
 
 ### 局限
 OMR 为启发式实现，**针对印刷清晰、排版规整**的乐谱效果最好；手写、花哨字体、竖排或带复杂装饰的谱可能识别不准。简谱解析核心 `parse_jianpu_glyphs` 是纯函数（八度点/减时线/附点规则见其 docstring），可独立单测（`test_omr_jianpu.py`）。识别结果建议导出到 MuseScore 人工校对。
@@ -113,7 +113,7 @@ test_omr_jianpu.py 简谱字形解析单元测试（纯函数，CI 运行）
 static/app.html    前端上传与结果展示页（含响应强度提示、可调降噪阈值滑块、识谱成曲模式切换）
 requirements.txt   Python 运行期依赖（部署/沙箱用，含重 ML 依赖）
 requirements-ci.txt CI 轻量依赖（import 检查 + 路由健康检查 + 单测；不装 basic-pitch/torch 等重依赖）
-Dockerfile         Docker 部署（含 ffmpeg/lilypond/fonts-noto-cjk/fluidsynth/demucs 系统包与依赖）
+Dockerfile         Docker 部署（含 ffmpeg/lilypond/fonts-noto-cjk/fluidsynth/demucs 系统包；并预装 Java + Audiveris 5.11.0 与 PaddleOCR 模型，使识谱引擎云端开箱即用；支持 `ARG REQ_FILE` 切换轻量 `requirements-omr.txt`）
 Procfile           Railway/Render 启动命令
 DEPLOY_B_C.md      内网穿透 + 平台一键部署说明
 LICENSE            MIT 许可证

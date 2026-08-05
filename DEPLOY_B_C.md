@@ -74,15 +74,45 @@ https://xxxx.trycloudflare.com
 
 ### C1（推荐）：用 Dockerfile 部署到 Railway
 
-新建 `Dockerfile`（已在本目录提供）：
+`Dockerfile`（已在本目录提供）已做云端开箱即用加固：
+
+- 装 `default-jre-headless` 并自动下载 **Audiveris 5.11.0** 解包出 `audiveris.jar` 到 `/opt/audiveris` → **五线谱 OMR 在云上直接可用**（无需部署者再装 Java/引擎）。
+- 补 `libgomp1 / libgl1 / libsm6 / libxext6 / libxrender1 / libglib2.0-0` → PaddleOCR / tensorflow / torch(demucs) / opencv 在 slim 镜像里能正常 import（否则会缺 `.so` 崩溃）。
+- 构建期预下载 **PaddleOCR** 中文模型 → 简谱 OCR 首次请求不再卡顿（失败也不阻断构建）。
+- 支持 `ARG REQ_FILE`：**整站部署**用默认 `requirements.txt`（含音频转录重型 ML 栈）；**只想做识谱（OMR）**可改用轻量的 `requirements-omr.txt`（镜像显著更小）：
+  ```bash
+  docker build --build-arg REQ_FILE=requirements-omr.txt -t score-transcriber-omr .
+  ```
+
+即：把仓库推到 GitHub，在 Railway/Render 连仓库选 Docker 部署即可，**识别引擎随镜像预装，访客打开网址即用**。
 
 ```dockerfile
 FROM python:3.11-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg lilypond && rm -rf /var/lib/apt/lists/*
+    ffmpeg lilypond fonts-noto-cjk fluidsynth timgm6mb-soundfont \
+    default-jre-headless libgomp1 libgl1 libsm6 libxext6 libxrender1 \
+    libglib2.0-0 curl ca-certificates && rm -rf /var/lib/apt/lists/*
+# 下载并解包 Audiveris 5.11.0 到 /opt/audiveris（五线谱 OMR 引擎）
+ENV AUDIVERIS_VERSION=5.11.0
+RUN set -eux; \
+    curl -fSL -o /tmp/audiveris.deb \
+      "https://github.com/Audiveris/audiveris/releases/download/${AUDIVERIS_VERSION}/Audiveris-${AUDIVERIS_VERSION}-ubuntu24.04-x86_64.deb"; \
+    dpkg-deb -x /tmp/audiveris.deb /tmp/audiveris_extract; \
+    mkdir -p /opt/audiveris; \
+    jar=$(find /tmp/audiveris_extract -name 'audiveris.jar' | head -n1); \
+    [ -n "$jar" ] && cp "$jar" /opt/audiveris/audiveris.jar; \
+    rm -rf /tmp/audiveris.deb /tmp/audiveris_extract; \
+    java -version
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+ARG REQ_FILE=requirements.txt
+COPY ${REQ_FILE} .
+RUN pip install --no-cache-dir -r ${REQ_FILE}
+RUN python - <<'PY' || echo "PaddleOCR 模型预下载跳过（运行时将自动下载）"
+from PIL import Image
+Image.new('RGB', (32, 32)).save('/tmp/_warm.png')
+from paddleocr import PaddleOCR
+PaddleOCR(use_angle_cls=True, lang='ch', show_log=False).ocr('/tmp/_warm.png', cls=True)
+PY
 COPY . .
 EXPOSE 8000
 CMD ["python", "run.py"]

@@ -1,0 +1,18 @@
+# 识谱成曲（OMR）轻量部署依赖
+# 仅包含：简谱 OCR（PaddleOCR）+ 五线谱解析（music21）+ 基础合成/渲染。
+# 不含音频转录的重型 ML 依赖（basic-pitch / demucs / torch / tensorflow / librosa），
+# 因此镜像体积显著更小，适合只做「识谱成曲」的开箱即用部署。
+# 用法（Docker 构建时切换）：
+#   docker build --build-arg REQ_FILE=requirements-omr.txt -t score-transcriber-omr .
+# 注意：五线谱 OMR 仍需镜像内预装的 Java + Audiveris（见 Dockerfile），本清单不含。
+
+fastapi
+uvicorn
+python-multipart   # FastAPI Form/File 上传端点 import 时即要求安装
+numpy==1.26.4
+matplotlib
+soundfile         # 顶层硬依赖（transcriber.py: import soundfile）
+music21==10.5.0    # 解析 MusicXML（五线谱 OMR 产物）
+pretty_midi==0.2.11
+paddleocr          # 简谱 OCR（中文印刷体更准）
+pillow             # PaddleOCR / 图像处理依赖
