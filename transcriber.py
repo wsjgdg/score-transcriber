@@ -1170,13 +1170,26 @@ def render_midi_fluidsynth(midi_path: str, wav_path: str, sr: int = SR) -> bool:
 
 
 def synth_score(note_list, wav_path: str, sr: int = SR) -> bool:
-    """把识别出的音符表用简单加性合成渲染为单声道 WAV（无需 soundfont / 外部合成器，纯 numpy）。"""
+    """把识别出的音符表用钢琴化加性合成渲染为单声道 WAV（纯 numpy，无需 soundfont）。
+
+    电音/不自然的主要来源：纯正弦加性 + 机械的起止包络 + 无混响（干冷）。
+    这里改用以真实钢琴为目标的合成：多谐波 + 逐谐波衰减（高次泛音更快消失）、
+    快起音 + 指数衰减 + 软释音防爆音、tanh 软饱和去刺耳，最后叠一层合成脉冲响应
+    混响增加空间感。整体更接近真实乐器而非合成器。
+    """
     notes = [(o, s, int(round(p)), v)
              for (o, s, p, v, _b) in note_list if p >= 0 and s > o]
     if not notes:
         return False
     t_max = max(s for (o, s, p, v) in notes)
-    out = np.zeros(int((t_max + 0.6) * sr), dtype=np.float32)
+    out = np.zeros(int((t_max + 1.4) * sr), dtype=np.float64)
+
+    # 谐波相对振幅 + 该谐波的衰减时间系数（钢琴：高次泛音衰减更快 → 亮度随时间下降）
+    harmonics = [(1.00, 1.00), (0.55, 0.62), (0.40, 0.46),
+                 (0.22, 0.30), (0.14, 0.22), (0.09, 0.16), (0.06, 0.12)]
+    # 轻微非谐性（钢琴弦刚性）：高次泛音略偏离整数倍，音色更真实
+    inharm = [1.0, 2.001, 3.002, 4.004, 5.006, 6.008, 7.010]
+
     for onset, offset, pitch, vel in notes:
         f = 440.0 * (2.0 ** ((pitch - 69) / 12.0))   # MIDI 69 = A4 = 440Hz
         dur = offset - onset
@@ -1184,25 +1197,42 @@ def synth_score(note_list, wav_path: str, sr: int = SR) -> bool:
         if n <= 0:
             continue
         t = np.arange(n) / sr
-        # 基频 + 两个泛音，模拟柔和的乐器音色
-        sig = (np.sin(2 * np.pi * f * t)
-               + 0.5 * np.sin(2 * np.pi * 2 * f * t)
-               + 0.25 * np.sin(2 * np.pi * 3 * f * t))
-        # ADSR 包络（attack 10ms / release 60ms），避免爆音
-        env = np.ones(n)
-        a = min(int(0.01 * sr), n)
-        r = min(int(0.06 * sr), n)
-        if a:
-            env[:a] = np.linspace(0, 1, a)
-        if r:
-            env[-r:] = np.linspace(1, 0, r)
-        sig = sig * env * (0.22 * float(np.clip(vel, 0.0, 1.0)))
+        # 钢琴化包络：~4ms 快起音 → 指数衰减（长音用更缓的衰减，封顶避免过短）
+        decay = min(max(dur * 0.9, 0.6), 4.0)
+        env = np.exp(-t / decay)
+        a = max(1, int(0.004 * sr))
+        env[:a] = np.linspace(0.0, 1.0, a) * env[:a]
+        # 软释音（末尾 25ms 淡出）防爆音
+        rel = max(1, int(0.025 * sr))
+        if n > rel * 2:
+            env[-rel:] = env[-rel:] * np.linspace(1.0, 0.0, rel)
+
+        amp = float(np.clip(vel, 0.0, 1.0)) ** 0.6   # 感知响度曲线（柔化强弱对比）
+        sig = np.zeros(n, dtype=np.float64)
+        for (amp_h, tau_h), mult in zip(harmonics, inharm):
+            # 每个谐波按自身时间常数衰减 → 起音亮、随后变温润
+            sig += amp_h * np.exp(-t / (decay * tau_h)) * np.sin(2 * np.pi * f * mult * t)
+        # tanh 软饱和：削掉叠加峰值的毛刺，增加暖度
+        sig = np.tanh(sig * 1.1)
+        sig = sig * env * (0.32 * amp)
         i0 = int(onset * sr)
         if i0 + n <= len(out):
             out[i0:i0 + n] += sig
+
     peak = float(np.max(np.abs(out))) if out.size else 0.0
     if peak > 0:
-        out = out / peak * 0.85
+        out = out / peak * 0.9
+
+    # 合成脉冲响应混响（指数衰减噪声），卷积增加空间感、去干冷电音
+    ir_len = int(0.25 * sr)
+    ir = (np.random.randn(ir_len) * np.linspace(1.0, 0.0, ir_len) ** 2.2).astype(np.float64)
+    ir /= (np.max(np.abs(ir)) + 1e-9)
+    wet = np.convolve(out, ir, mode="full")[: len(out)] * 0.18
+    out = (out + wet).astype(np.float32)
+    peak = float(np.max(np.abs(out))) if out.size else 0.0
+    if peak > 0:
+        out = out / peak * 0.92
+
     try:
         sf.write(wav_path, out, sr)
         return True
