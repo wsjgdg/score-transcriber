@@ -26,6 +26,7 @@
   .upload-label .big{color:var(--text);font-size:16px;font-weight:600}
   .upload-label .small{color:var(--muted);font-size:12.5px;line-height:1.6}
   .upload-label input[type=file]{display:none}
+  .upload-label.dragover{border-color:var(--accent);background:#20264a;box-shadow:0 0 0 2px var(--accent) inset}
   .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:14px}
   label.fld{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted)}
   input[type=number]{width:100%;padding:10px;border-radius:9px;border:1px solid var(--line);background:#0e1226;color:var(--text);font-size:15px}
@@ -203,7 +204,7 @@
     <label class="upload-label" id="omrDrop">
       <input id="omrFile" type="file" accept="image/*" />
       <span class="big" id="omrDropText">点击选择乐谱图片</span>
-      <span class="small">支持 PNG / JPG / WEBP 等<br/>印刷清晰、排版规整的乐谱识别最佳</span>
+      <span class="small">支持 PNG / JPG / WEBP 等<br/>印刷清晰、排版规整的乐谱识别最佳<br/>也可直接把图片拖到此处上传</span>
     </label>
     <div class="row">
       <label class="fld" style="min-width:200px">谱式
@@ -407,6 +408,31 @@ const omrFile = $("omrFile"), omrGo = $("omrGo"), omrDropText = $("omrDropText")
 omrFile.addEventListener("change", () => {
   if(omrFile.files[0]) omrDropText.textContent = "已选择：" + omrFile.files[0].name;
 });
+
+// 识谱成曲：把图片拖到选择区也可上传（拖动到“点击选择”那个位置）
+const omrDrop = $("omrDrop");
+let _omrDragDepth = 0;
+omrDrop.addEventListener("dragenter", e => { e.preventDefault(); _omrDragDepth++; omrDrop.classList.add("dragover"); });
+omrDrop.addEventListener("dragover", e => { e.preventDefault(); });
+omrDrop.addEventListener("dragleave", e => { _omrDragDepth = Math.max(0, _omrDragDepth - 1); if(_omrDragDepth === 0) omrDrop.classList.remove("dragover"); });
+omrDrop.addEventListener("drop", e => {
+  e.preventDefault(); e.stopPropagation();
+  _omrDragDepth = 0; omrDrop.classList.remove("dragover");
+  const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if(!f) return;
+  if(!f.type.startsWith("image/")){ showErr("请拖入图片文件（PNG / JPG / WEBP 等）。"); return; }
+  try {
+    const dt = new DataTransfer();
+    dt.items.add(f);
+    omrFile.files = dt.files;          // 同步到隐藏的 file input
+    omrFile.dispatchEvent(new Event("change"));  // 触发上面的文件名更新
+  } catch(err){
+    showErr("当前浏览器不支持直接拖入文件，请改为点击选择。");
+  }
+});
+// 阻止在页面其它位置误拖文件导致浏览器跳转
+window.addEventListener("dragover", e => e.preventDefault());
+window.addEventListener("drop", e => e.preventDefault());
 omrGo.addEventListener("click", () => {
   const f = omrFile.files[0];
   if(!f){ showErr("请先选择一张乐谱图片（简谱或五线谱）。"); return; }
