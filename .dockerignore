@@ -1,0 +1,10 @@
+# 构建上下文排除：减小镜像上下文体积、避免把本地产物/密钥带进镜像
+.git
+__pycache__
+*.pyc
+outputs
+uploads
+node_modules
+.venv
+venv
+.env

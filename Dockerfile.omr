@@ -1,0 +1,66 @@
+# OMR-only 部署镜像（推荐用于 Railway / 轻量云）。
+# 与 Dockerfile 的唯一区别：依赖默认用 requirements-omr.txt（不含
+# torch / tensorflow / demucs / basic-pitch / librosa 等重型音频 ML 栈），
+# 因此镜像显著更小、构建不会因多 GB 轮子把构建环境撑爆。
+# 用途：只做「识谱成曲」（简谱 OCR + 五线谱 Audiveris + 合成/渲染）。
+# 如需完整「音视频转乐谱」，请改用 Dockerfile（整站部署）。
+
+FROM python:3.11-slim
+
+# 系统依赖
+# - ffmpeg: 音频抽取
+# - lilypond: 五线谱渲染
+# - fonts-noto-cjk: 钢琴卷帘 / 图表中文
+# - default-jre-headless: 五线谱 OMR 引擎 Audiveris（Java）运行所需
+# - libgomp1 / libgl1 / libsm6 / libxext6 / libxrender1 / libglib2.0-0:
+#       paddlepaddle / opencv 运行所需的 .so
+# - curl / ca-certificates: 下载 Audiveris 发行包
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    lilypond \
+    fonts-noto-cjk \
+    default-jre-headless \
+    libgomp1 \
+    libgl1 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    libglib2.0-0 \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# 五线谱 OMR 引擎 Audiveris（开源，Java）。
+# 取官方 .deb 发行包，仅解包取出 audiveris.jar 到 /opt/audiveris
+# （omr_staff.find_audiveris() 会自动探测该路径）。
+ENV AUDIVERIS_VERSION=5.11.0
+RUN set -eux; \
+    curl -fSL -o /tmp/audiveris.deb \
+      "https://github.com/Audiveris/audiveris/releases/download/${AUDIVERIS_VERSION}/Audiveris-${AUDIVERIS_VERSION}-ubuntu24.04-x86_64.deb"; \
+    dpkg-deb -x /tmp/audiveris.deb /tmp/audiveris_extract; \
+    mkdir -p /opt/audiveris; \
+    jar=$(find /tmp/audiveris_extract -name 'audiveris.jar' | head -n1); \
+    if [ -n "$jar" ]; then cp "$jar" /opt/audiveris/audiveris.jar; fi; \
+    rm -rf /tmp/audiveris.deb /tmp/audiveris_extract; \
+    java -version
+
+WORKDIR /app
+
+# 依赖清单：默认 OMR 轻量版（不含重型音频 ML 栈）。
+ARG REQ_FILE=requirements-omr.txt
+COPY ${REQ_FILE} .
+RUN pip install --no-cache-dir -r ${REQ_FILE}
+
+# 预下载简谱 OCR（PaddleOCR）模型，避免云上首次请求卡顿。
+# 失败不阻断构建——运行时 PaddleOCR 仍会自动下载。
+RUN python - <<'PY' || echo "PaddleOCR 模型预下载跳过（运行时将自动下载）"
+from PIL import Image
+Image.new('RGB', (32, 32)).save('/tmp/_warm.png')
+from paddleocr import PaddleOCR
+PaddleOCR(use_angle_cls=True, lang='ch', show_log=False).ocr('/tmp/_warm.png', cls=True)
+PY
+
+COPY . .
+
+EXPOSE 8000
+CMD ["python", "run.py"]

@@ -120,6 +120,20 @@ CMD ["python", "run.py"]
 
 Railway 检测到 Dockerfile 会自动用它构建；`run.py` 读取平台注入的 `PORT`，无需额外配置。
 
+### C1b（Railway 实测推荐）：用 OMR-only 镜像，避开重型 ML 构建失败
+
+在 Railway 上直接构建默认 `Dockerfile`（即 `requirements.txt`）曾实测失败：
+`pip install` 会同时拉 `demucs`(torch) + `basic-pitch`(tensorflow/jax) + `paddleocr`(paddlepaddle)，
+多 GB 轮子把构建容器的内存/磁盘/时长撑爆，pip 以退出码 1 结束（构建跑满 10m+）。
+
+若你只需「识谱成曲」云端开箱即用（最常见的诉求），用本仓库提供的 **OMR-only 配置**即可：
+
+- `Dockerfile.omr`：除系统依赖 / Audiveris 外，依赖默认 `requirements-omr.txt`（**不含** torch / tensorflow / demucs / basic-pitch / librosa）。
+- `railway.json`：已把 `build.dockerfilePath` 设为 `Dockerfile.omr`，推上去 Railway 自动用它构建。
+
+推仓库后在 Railway 触发一次重新部署即可，无需任何额外配置（`run.py` 读取平台注入的 `PORT`）。
+需要完整「音视频转乐谱」时，再把 `dockerfilePath` 改回 `Dockerfile` 并准备更大构建资源。
+
 ### C2：纯 Python 部署到 Render
 
 Render 的 Python 环境**不含 ffmpeg/lilypond**，纯 pip 方案装不上这两个系统包，所以：
