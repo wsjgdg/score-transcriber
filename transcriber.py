@@ -1044,7 +1044,7 @@ def process(src_path: str, out_dir: str, bpm: float = 120, beats: int = 4,
              gap_merge: float = 0.0, onset_confirm: bool = False,
              rms_vel: bool = False, fine_quant: bool = False,
              auto_beats: bool = False, key: str = DEFAULT_KEY,
-             on_progress=None) -> dict:
+             octave_shift: int = 0, on_progress=None) -> dict:
     os.makedirs(out_dir, exist_ok=True)
 
     def _prog(stage: str, pct: int):
@@ -1149,6 +1149,13 @@ def process(src_path: str, out_dir: str, bpm: float = 120, beats: int = 4,
         note_list = transpose_note_list(note_list, key_delta)
         _prog(f"已移调至 {key_label}", 58)
 
+    # 全局八度偏移（修正 basic-pitch 系统性高/低八度）：整段上下移 12*shift 半音。
+    # 放在选调之后，与移调叠加；钳到 >=0 由 transpose_note_list 处理。
+    octave_shift = max(-2, min(2, int(octave_shift)))
+    if octave_shift:
+        note_list = transpose_note_list(note_list, 12 * octave_shift)
+        _prog(f"已偏移 {octave_shift:+} 个八度", 59)
+
     # 准确率增强（CPU）：自动估计每小节拍数（拍号），仅作提示，置信不足回退用户值
     effective_beats = beats
     beats_estimated = False
@@ -1232,6 +1239,7 @@ def process(src_path: str, out_dir: str, bpm: float = 120, beats: int = 4,
             "auto_beats": auto_beats,
             "key": key_label,
             "key_raw": key,
+            "octave_shift": octave_shift,
             "lyrics_source": lyrics_source,
             "lyrics_count": (len([t for t in (lyrics_tokens or []) if t])
                              if lyrics_tokens else 0),

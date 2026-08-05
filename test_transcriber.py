@@ -130,6 +130,19 @@ def test_transpose_note_list():
     assert low[0][2] == 0
 
 
+def test_transpose_note_list_octave_shift():
+    # 全局八度偏移 = transpose_note_list(notes, 12 * shift)
+    notes = [(0.0, 0.5, 72, 0.9, None), (0.6, 1.0, 60, 0.8, None)]
+    down1 = T.transpose_note_list(notes, 12 * -1)   # C5->C4, C4->C3
+    assert down1[0][2] == 60 and down1[1][2] == 48
+    down2 = T.transpose_note_list(notes, 12 * -2)   # 再降八度
+    assert down2[0][2] == 48 and down2[1][2] == 36
+    up1 = T.transpose_note_list(notes, 12 * 1)      # C5->C6
+    assert up1[0][2] == 84
+    # 极低音下移不出现负数（钳到 0）
+    assert T.transpose_note_list([(0.0, 0.5, 5, 0.9, None)], 12 * -1)[0][2] == 0
+
+
 def test_jianpu_movable_do_header_and_degree():
     # 选调 D：表头应为 1=D，且 D 音(62) 在首调下唱名为 1，E 音(64) 为 2
     notes = [(0.0, 0.5, 62, 0.9, None)]

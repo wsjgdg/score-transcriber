@@ -151,12 +151,13 @@ async def api_transcribe(file: UploadFile = File(...),
                          lyrics: str = Form(""),
                          asr: bool = Form(False),
                          hpss: bool = Form(False),
-                         melody: bool = Form(False),
-                         clean: bool = Form(False),
+                         melody: bool = Form(True),
+                         clean: bool = Form(True),
                          rms_vel: bool = Form(False),
                          fine_quant: bool = Form(False),
                          auto_beats: bool = Form(False),
-                         key: str = Form("C")):
+                         key: str = Form("C"),
+                         octave_shift: int = Form(0)):
     ext = Path(file.filename or "x.wav").suffix.lower()
     if ext not in ALLOWED:
         return JSONResponse({"status": "error", "msg": f"不支持的文件格式：{ext}"})
@@ -189,6 +190,7 @@ async def api_transcribe(file: UploadFile = File(...),
     separate_target = separate_target or "vocals"
     backend = backend or "basic-pitch"
     key = key or "C"
+    octave_shift = max(-2, min(2, int(octave_shift)))
 
     # 整理本次优化选项，便于历史回看展示
     opts = {
@@ -199,7 +201,7 @@ async def api_transcribe(file: UploadFile = File(...),
         "asr": asr,
         "hpss": hpss, "melody": melody, "clean": clean,
         "rms_vel": rms_vel, "fine_quant": fine_quant, "auto_beats": auto_beats,
-        "key": key,
+        "key": key, "octave_shift": octave_shift,
     }
 
     # 长任务放后台线程，立即返回 job_id；前端轮询 /api/progress/{job_id} 拿进度与最终谱面。
@@ -216,7 +218,7 @@ async def api_transcribe(file: UploadFile = File(...),
         args=(uid, str(src), str(OUT / uid), bpm, beats, min_velocity,
               separate, separate_target, high_conf_only, auto_bpm,
               smart_denoise, backend, lyrics, asr, hpss, melody, clean,
-              rms_vel, fine_quant, auto_beats, key, opts, file.filename),
+              rms_vel, fine_quant, auto_beats, key, octave_shift, opts, file.filename),
         daemon=True,
     ).start()
     return {"status": "queued", "job_id": uid}
@@ -225,7 +227,7 @@ async def api_transcribe(file: UploadFile = File(...),
 def _run_job(uid, src, out_dir, bpm, beats, min_velocity, separate,
              separate_target, high_conf_only, auto_bpm, smart_denoise,
              backend, lyrics, asr, hpss, melody, clean, rms_vel, fine_quant,
-             auto_beats, key, opts, filename):
+             auto_beats, key, octave_shift, opts, filename):
     """后台执行转录并把进度/结果写入 _JOBS[uid]，完成时写历史。"""
     def _report(stage, pct):
         with _JOBS_LOCK:
@@ -257,6 +259,7 @@ def _run_job(uid, src, out_dir, bpm, beats, min_velocity, separate,
                                   onset_confirm=clean,
                                   rms_vel=rms_vel, fine_quant=fine_quant,
                                   auto_beats=auto_beats, key=key,
+                                  octave_shift=octave_shift,
                                   on_progress=_report)
         res.pop("note_list", None)   # 评测用，不入库、不传前端
     except transcriber.BackendUnavailable as e:
