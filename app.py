@@ -498,11 +498,13 @@ def api_caps():
     import importlib.util
     def _has(mod):
         return importlib.util.find_spec(mod) is not None
-    omr_jianpu_ok = _has("paddleocr") or _has("pytesseract")
+    jianpu_probe = omr_jianpu.probe_jianpu()
+    omr_jianpu_ok = jianpu_probe.get("paddleocr") or _has("pytesseract")
     omr_staff_ok = omr_staff.find_audiveris() is not None
     return {"demucs": transcriber._DEMUCS_OK, "mt3": transcriber.MT3_OK,
             "fluidsynth": transcriber.FLUIDSYNTH_OK, "whisper": transcriber.WHISPER_OK,
-            "omr_jianpu": omr_jianpu_ok, "omr_staff": omr_staff_ok}
+            "omr_jianpu": omr_jianpu_ok, "omr_staff": omr_staff_ok,
+            "omr_jianpu_detail": jianpu_probe}
     # 前端轮询拿转录进度与最终结果（长任务避免同步阻塞被代理掐断）。
     with _JOBS_LOCK:
         j = _JOBS.get(job_id)
