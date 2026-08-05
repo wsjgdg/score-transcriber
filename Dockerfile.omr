@@ -35,26 +35,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 五线谱 OMR 引擎 Audiveris（开源，Java，纯 Java 应用）。
 # 取 ubuntu22.04 的 deb（其 GLIBC 2.35 低于 Debian 12 的 2.36，兼容性更好；
 # Railway 基础镜像 python:3.11-slim 即 Debian 12）。
-# 关键：Audiveris 不是单 jar 能跑——必须连同 lib/ 依赖。这里解包出完整应用到
-# /opt/audiveris（audiveris.jar + lib/），并动态读取 jar 内 Main-Class 生成带
-# lib/* classpath 的启动器到 /usr/local/bin/audiveris（在 PATH 上），确保
-# find_audiveris() 直接命中且 classpath 正确（仅拷 jar 会因缺 lib 而崩溃）。
+# 关键做法：直接 `dpkg-deb -x` 解包到根目录——deb 自带的官方启动器（通常是
+# /usr/bin/audiveris）与完整应用（audiveris.jar + lib/）落到其标准绝对路径，
+# classpath / 主类由官方启动器正确设置，find_audiveris() 经 PATH 直接命中，
+# 无需自己解析主类（曾误读为 "Audiveris" 导致 ClassNotFoundException）。
+# 仅当官方启动器不在 PATH 时，才生成一个用 `java -jar`（JVM 自读 MANIFEST）的兜底启动器。
 ENV AUDIVERIS_VERSION=5.11.0
 RUN set -eux; \
     curl -fSL -o /tmp/audiveris.deb \
       "https://github.com/Audiveris/audiveris/releases/download/${AUDIVERIS_VERSION}/Audiveris-${AUDIVERIS_VERSION}-ubuntu22.04-x86_64.deb"; \
-    dpkg-deb -x /tmp/audiveris.deb /tmp/audiveris_extract; \
+    dpkg-deb -x /tmp/audiveris.deb /; \
     rm -f /tmp/audiveris.deb; \
-    jar=$(find /tmp/audiveris_extract -name 'audiveris.jar' -print -quit); \
-    if [ -z "$jar" ]; then echo "ERROR: audiveris.jar not found in extracted deb"; exit 1; fi; \
-    app=$(dirname "$jar"); \
-    mkdir -p /opt/audiveris; \
-    cp -r "$app"/. /opt/audiveris/; \
-    rm -rf /tmp/audiveris_extract; \
-    main=$(python3 -c "import zipfile,re; z=zipfile.ZipFile('/opt/audiveris/audiveris.jar'); m=z.read('META-INF/MANIFEST.MF').decode('utf-8','ignore'); mm=re.search(r'Main-Class:\s*(\S+)', m); print(mm.group(1) if mm else 'org.audiveris.omr.Main')"); \
-    printf '#!/bin/sh\nexec java -Xmx1200m -cp \"/opt/audiveris/audiveris.jar:/opt/audiveris/lib/*\" %s \"$@\"\n' "$main" > /usr/local/bin/audiveris; \
-    chmod +x /usr/local/bin/audiveris; \
-    which audiveris; \
+    if [ ! -x /usr/bin/audiveris ] && [ ! -x /usr/local/bin/audiveris ]; then \
+      appjar=$(find /usr /opt -name audiveris.jar 2>/dev/null | head -n1); \
+      if [ -n "$appjar" ]; then \
+        printf '#!/bin/sh\nexec java -Xmx1200m -jar "%s" "$@"\n' "$appjar" > /usr/local/bin/audiveris; \
+        chmod +x /usr/local/bin/audiveris; \
+      fi; \
+    fi; \
+    which audiveris || ls -la /usr/bin/audiveris /usr/local/bin/audiveris 2>/dev/null || true; \
     java -version
 
 WORKDIR /app

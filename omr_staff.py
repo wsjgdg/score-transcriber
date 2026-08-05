@@ -30,7 +30,9 @@ def find_audiveris():
         p = shutil.which(name)
         if p:
             return [p]
-    # 查找 jar（完整应用需连同 lib/ 依赖一起构造 classpath）
+    # 查找 jar：用 `java -jar` 启动，主类与 lib 依赖（Class-Path）由 JVM 从
+    # MANIFEST 自行解析——不手动读主类（曾误读为 "Audiveris" 导致
+    # ClassNotFoundException）。官方 deb 启动器（/usr/bin/audiveris）优先经 PATH 命中。
     for d in _AUDIVERIS_DIRS:
         if not os.path.isdir(d):
             continue
@@ -41,27 +43,8 @@ def find_audiveris():
                     java = shutil.which("java")
                     if not java:
                         continue
-                    lib = os.path.join(root, "lib")
-                    if os.path.isdir(lib):
-                        return [java, "-cp", jar + ":" + os.path.join(lib, "*"),
-                                _audiveris_main_class(root)]
                     return [java, "-jar", jar]
     return None
-
-
-def _audiveris_main_class(app_dir):
-    """从 audiveris.jar 的 MANIFEST 读取 Main-Class；读不到则回退到常见默认。"""
-    jar = os.path.join(app_dir, "audiveris.jar")
-    try:
-        import zipfile, re
-        with zipfile.ZipFile(jar) as z:
-            mf = z.read("META-INF/MANIFEST.MF").decode("utf-8", "ignore")
-        m = re.search(r"Main-Class:\s*(\S+)", mf)
-        if m:
-            return m.group(1)
-    except Exception:
-        pass
-    return "org.audiveris.omr.Main"
 
 
 def _parse_musicxml(xml_path: str, bpm: float):

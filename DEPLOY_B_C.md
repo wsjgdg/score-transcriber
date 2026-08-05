@@ -128,7 +128,7 @@ Railway 检测到 Dockerfile 会自动用它构建；`run.py` 读取平台注入
 
 若你只需「识谱成曲」云端开箱即用（最常见的诉求），用本仓库提供的 **OMR-only 配置**即可：
 
-- `Dockerfile.omr`：除系统依赖 / Audiveris 外，依赖默认 `requirements-omr.txt`（**不含** torch / tensorflow / demucs / basic-pitch / librosa）；并预装 `tesseract-ocr` 系统二进制。Audiveris 用 ubuntu22.04 的 deb 解包出**完整应用**（`audiveris.jar` + `lib/`），并动态读取 Main-Class 生成带 `lib/*` classpath 的启动器到 `/usr/local/bin/audiveris`（在 PATH 上）——解决"只拷 jar 会因缺 lib 崩溃"导致五线谱 OMR 在云端跑不起来的问题。
+- `Dockerfile.omr`：除系统依赖 / Audiveris 外，依赖默认 `requirements-omr.txt`（**不含** torch / tensorflow / demucs / basic-pitch / librosa）；并预装 `tesseract-ocr` 系统二进制。Audiveris 用 ubuntu22.04 的 deb **直接 `dpkg-deb -x` 解包到根目录**——deb 自带的官方启动器（/usr/bin/audiveris）与完整应用（audiveris.jar + lib/）落到标准绝对路径，`find_audiveris()` 经 PATH 直接命中、classpath/主类由官方启动器正确设置；仅当官方启动器不在 PATH 时才生成 `java -jar` 兜底（JVM 自读 MANIFEST 主类）。这样彻底避免"只拷 jar 缺 lib"与"手动解析主类误读为 Audiveris"两个导致五线谱 OMR 在云端跑不起来的坑。
 - `railway.json`：已把 `build.dockerfilePath` 设为 `Dockerfile.omr`，推上去 Railway 自动用它构建。
 
 **简谱 OCR 双保险**：镜像同时带 PaddleOCR（首选，中文更准）与 Tesseract（兜底，`requirements-omr.txt` 已含 `pytesseract`）。`omr_jianpu.ocr_image` 在 PaddleOCR 初始化/识别失败或识别为空时，自动回落 Tesseract；两者都不可用才给出清晰报错。故即便 PaddleOCR 的 3.x 在云上异常，OCR 仍开箱即用。
