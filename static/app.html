@@ -27,6 +27,10 @@
   .upload-label .small{color:var(--muted);font-size:12.5px;line-height:1.6}
   .upload-label input[type=file]{display:none}
   .upload-label.dragover{border-color:var(--accent);background:#20264a;box-shadow:0 0 0 2px var(--accent) inset}
+  .omr-drop-main{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;cursor:pointer;width:100%}
+  .omr-drop-foot{margin-top:12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center;font-size:12.5px;color:var(--muted)}
+  .linkbtn{background:transparent;border:1px solid var(--line);color:var(--accent);border-radius:8px;padding:3px 10px;font-size:12.5px;cursor:pointer}
+  .linkbtn:hover{border-color:var(--accent);background:#20264a}
   .seg{display:inline-flex;gap:6px;margin:4px 0 14px}
   .seg-btn{padding:7px 14px;border:1px solid var(--line);background:#0e1226;color:var(--text);border-radius:9px;cursor:pointer;font-size:14px;transition:.15s}
   .seg-btn.active{background:var(--accent);color:#0b0e1f;border-color:var(--accent);font-weight:600}
@@ -213,12 +217,18 @@
       <button type="button" id="omrSrcImg" class="seg-btn active">上传图片</button>
       <button type="button" id="omrSrcText" class="seg-btn">手动输入</button>
     </div>
-    <label class="upload-label" id="omrDrop">
-      <input id="omrFile" type="file" accept="image/*" />
-      <span class="big" id="omrDropText">点击选择乐谱图片</span>
-      <span class="small">支持 PNG / JPG / WEBP 等<br/>印刷清晰、排版规整的乐谱识别最佳<br/>也可直接把图片拖到此处上传</span>
-    </label>
-    <button type="button" id="omrFolderBtn" class="copyBtn" style="margin-top:8px">📁 从文件夹选择图片…</button>
+    <div class="upload-label" id="omrDrop">
+      <div class="omr-drop-main" id="omrDropMain">
+        <input id="omrFile" type="file" accept="image/*" hidden />
+        <span class="big" id="omrDropText">点击选择乐谱图片</span>
+        <span class="small">支持 PNG / JPG / WEBP 等<br/>印刷清晰、排版规整的乐谱识别最佳<br/>也可直接把图片拖到此处上传</span>
+      </div>
+      <div class="omr-drop-foot">
+        <span>或</span>
+        <button type="button" id="omrFolderBtn" class="linkbtn">📁 选择文件夹</button>
+        <span class="small">（打开后可点选单张图片，文件夹本身不上传）</span>
+      </div>
+    </div>
     <div id="omrFolderPanel" class="hidden" style="margin-top:10px;border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--panel2)">
       <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin-bottom:8px">
         <span id="omrFolderPath" style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">未选择文件夹</span>
@@ -267,7 +277,7 @@
       · <b>简谱</b>：本地 OCR（PaddleOCR / Tesseract）直接识别数字谱，自动还原音高、八度与节奏，立即出 MIDI / 五线谱 / 简谱并可播放。<br/>
       · <b>五线谱</b>：调用开源 OMR 引擎 Audiveris 把图片转 MusicXML 再解析；若未安装会在识别时报安装指引。<br/>
       · 识别结果与「音视频转乐谱」共用同一套渲染，可下载 MIDI / MusicXML、复制简谱。
-      · <b>从文件夹选图</b>：点「从文件夹选择图片…」可逐级打开文件夹、点选单张图片识别——只上传该图片，不会上传整个文件夹。
+      · <b>从文件夹选图</b>：点上传区里的「选择文件夹」可逐级打开文件夹、点选单张图片识别——只上传该图片，不会上传整个文件夹。
       · <b>手动输入</b>：无图片或图片识别不准时，点「手动输入」→「填充模板」，按模板内说明用文本写简谱，免 OCR 立即出谱。
     </div>
   </div>
@@ -435,6 +445,9 @@ const omrFile = $("omrFile"), omrGo = $("omrGo"), omrDropText = $("omrDropText")
 omrFile.addEventListener("change", () => {
   if(omrFile.files[0]) omrDropText.textContent = "已选择：" + omrFile.files[0].name;
 });
+// 上传区主区域点击 = 选图片；文件夹入口是同一区域内的「选择文件夹」按钮（见 omrFolderBtn）
+const omrDropMain = $("omrDropMain");
+omrDropMain.addEventListener("click", () => omrFile.click());
 
 // 识谱成曲：把图片拖到选择区也可上传（拖动到“点击选择”那个位置）
 const omrDrop = $("omrDrop");
@@ -488,7 +501,8 @@ function setOmrSource(mode){
     omrFolderBtn.style.display = "none";
     _omrTplOn = false; omrTpl.textContent = "填充模板";
   }else{
-    omrFolderBtn.style.display = _folderSupported ? "" : "none";
+    const foot = omrFolderBtn.closest(".omr-drop-foot");
+    if(foot) foot.style.display = _folderSupported ? "" : "none";
   }
 }
 omrSrcImg.addEventListener("click", () => setOmrSource("img"));
