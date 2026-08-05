@@ -93,6 +93,77 @@ def transpose_note_list(note_list, semis: int):
     return out
 
 
+def correct_note_octave_to_f0(pitch_midi: float, f0_midi) -> tuple:
+    """纯函数：把单个音符的八度对齐到真实基频 F0。
+    仅当音名(pitch class)相同、且比 F0 高 1~2 个八度时下拉，避免误改正确音；
+    返回 (new_pitch, shifted: bool)。F0 来自 pYIN/CREPE 等鲁棒基频估计，
+    用于自动修正 basic-pitch 系统性“高八度”错误（无需用户手动选旋钮）。
+    """
+    if pitch_midi < 0 or f0_midi is None:
+        return pitch_midi, False
+    if (int(round(pitch_midi)) % 12) != (int(round(f0_midi)) % 12):
+        return pitch_midi, False  # 音名不同（可能是复调另一声部），不修正
+    oct_diff = int(round((pitch_midi - f0_midi) / 12.0))
+    if 1 <= oct_diff <= 2:  # 高 1~2 个八度 → 拉回真 F0 的八度
+        np_ = int(round(pitch_midi)) - 12 * oct_diff
+        if np_ >= 0:
+            return np_, True
+    return pitch_midi, False
+
+
+def f0_octave_correct(note_list, wav_path, sr: int = SR, y=None):
+    """用 pYIN 从原音频估真实基频轨迹，自动把每个音符的八度对齐到真 F0。
+    仅依赖 lazy import 的 librosa/numpy，CI 无 librosa 时静默跳过（返回原表）。
+    返回 (corrected_note_list, shifted_count)。
+    """
+    if not note_list:
+        return note_list, 0
+    try:
+        import librosa
+        import numpy as _np
+    except Exception:
+        return note_list, 0
+    try:
+        if y is None:
+            y, _sr = librosa.load(wav_path, sr=sr, mono=True)
+        else:
+            _sr = sr
+        fmin = librosa.note_to_hz("C2")
+        fmax = librosa.note_to_hz("C7")
+        f0 = librosa.pyin(y, fmin=fmin, fmax=fmax, sr=_sr,
+                          frame_length=2048, hop_length=512)[0]
+        times = librosa.times_like(f0, sr=_sr, hop_length=512)
+    except Exception:
+        return note_list, 0
+    voiced = ~_np.isnan(f0)
+    if voiced.sum() < 3:
+        return note_list, 0
+    f0_hz = f0[voiced]
+    f0_times = times[voiced]
+    out = []
+    shifted = 0
+    for (o, s, p, v, b) in note_list:
+        if p < 0:
+            out.append((o, s, p, v, b))
+            continue
+        lo = max(0.0, float(o) - 0.05)
+        hi = float(s) + 0.05
+        mask = (f0_times >= lo) & (f0_times <= hi)
+        if mask.sum() < 2:
+            out.append((o, s, p, v, b))
+            continue
+        med = float(_np.median(f0_hz[mask]))
+        if med <= 0 or _np.isnan(med):
+            out.append((o, s, p, v, b))
+            continue
+        m_f0 = 69.0 + 12.0 * _np.log2(med / 440.0)
+        new_p, did = correct_note_octave_to_f0(p, m_f0)
+        if did:
+            shifted += 1
+        out.append((o, s, new_p, v, b))
+    return out, shifted
+
+
 # ----------------------------------------------------------------------------
 # 1. 音频提取（视频抽音轨 / 任意音频转标准 wav）
 # ----------------------------------------------------------------------------
@@ -1044,7 +1115,8 @@ def process(src_path: str, out_dir: str, bpm: float = 120, beats: int = 4,
              gap_merge: float = 0.0, onset_confirm: bool = False,
              rms_vel: bool = False, fine_quant: bool = False,
              auto_beats: bool = False, key: str = DEFAULT_KEY,
-             octave_shift: int = 0, on_progress=None) -> dict:
+             octave_shift: int = 0, f0_octave_fix: bool = True,
+             on_progress=None) -> dict:
     os.makedirs(out_dir, exist_ok=True)
 
     def _prog(stage: str, pct: int):
@@ -1141,6 +1213,15 @@ def process(src_path: str, out_dir: str, bpm: float = 120, beats: int = 4,
             note_list = kept
         else:
             high_conf_empty = True   # 过滤后无剩余音符，回退保留完整结果以免出现空谱
+
+    # 自动八度校正（F0 重锚定）：用 pYIN 从原音频估真实基频，把 basic-pitch
+    # 系统性“高八度”的音符拉回真 F0 八度（无需用户手动选旋钮）。
+    # 放在降噪/高置信过滤之后、选调/手动八度旋钮之前，使自动修正优先于手动偏移。
+    f0_shifted = 0
+    if f0_octave_fix:
+        note_list, f0_shifted = f0_octave_correct(note_list, transcribe_wav, y=_proc_y)
+        if f0_shifted:
+            _prog(f"F0 八度校正（修正 {f0_shifted} 音）", 56)
 
     # 选调 / 移调：把整段音符表移到目标调（key），使五线谱/简谱/MIDI 一致处于该调。
     # 放在所有音符后处理之后，保证移调作用于最终保留的音符。
@@ -1240,6 +1321,8 @@ def process(src_path: str, out_dir: str, bpm: float = 120, beats: int = 4,
             "key": key_label,
             "key_raw": key,
             "octave_shift": octave_shift,
+            "f0_octave_fix": f0_octave_fix,
+            "f0_octave_shifted": f0_shifted,
             "lyrics_source": lyrics_source,
             "lyrics_count": (len([t for t in (lyrics_tokens or []) if t])
                              if lyrics_tokens else 0),

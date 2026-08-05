@@ -112,6 +112,7 @@
     if (s.fine_quant) optTags.push("细网格量化");
     if (s.auto_beats) optTags.push("自动拍号" + (s.beats_estimated ? "(" + s.beats_per_bar + "/" + (s.beats_denom || 4) + ")" : ""));
     if (s.octave_shift) optTags.push("八度偏移 " + (s.octave_shift > 0 ? "+" : "") + s.octave_shift);
+    if (s.f0_octave_fix) optTags.push(s.f0_octave_shifted ? ("F0自动校正×" + s.f0_octave_shifted) : "F0自动校正");
     if (s.backend && s.backend !== "basic-pitch") optTags.push("后端:" + s.backend);
     var optHtml = optTags.length
       ? '<div style="margin:0 0 14px">' + optTags.map(function (t) {

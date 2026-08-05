@@ -143,6 +143,28 @@ def test_transpose_note_list_octave_shift():
     assert T.transpose_note_list([(0.0, 0.5, 5, 0.9, None)], 12 * -1)[0][2] == 0
 
 
+# --- 自动八度校正 (F0 重锚定) ---
+def test_correct_note_octave_to_f0():
+    # basic-pitch 把 C5 误听成高八度（真 F0 = C3）：音名相同且高 2 个八度 → 拉回 C3
+    p, shifted = T.correct_note_octave_to_f0(72, 48.0)
+    assert shifted is True and p == 48
+    # 高 1 个八度（真 F0 = C4）：拉回 C4
+    p, shifted = T.correct_note_octave_to_f0(72, 60.0)
+    assert shifted is True and p == 60
+    # 已经是正确音高（F0 = C5）：不修正
+    p, shifted = T.correct_note_octave_to_f0(72, 72.0)
+    assert shifted is False and p == 72
+    # 音名不同（F0 是 D，不是 C）：不修正（避免复调误改）
+    p, shifted = T.correct_note_octave_to_f0(72, 62.0)
+    assert shifted is False and p == 72
+    # 高 3 个八度（超出保守 1~2 范围）：不修正，避免误伤
+    p, shifted = T.correct_note_octave_to_f0(72, 36.0)
+    assert shifted is False and p == 72
+    # 无效输入安全返回原值
+    p, shifted = T.correct_note_octave_to_f0(72, None)
+    assert shifted is False and p == 72
+
+
 def test_jianpu_movable_do_header_and_degree():
     # 选调 D：表头应为 1=D，且 D 音(62) 在首调下唱名为 1，E 音(64) 为 2
     notes = [(0.0, 0.5, 62, 0.9, None)]

@@ -151,13 +151,14 @@
           <label class="chk"><input type="checkbox" id="optHpss" /> 分离鼓点 HPSS（去打击乐/噪声干扰）</label>
           <label class="chk"><input type="checkbox" id="optMelody" checked /> 人声单旋律模式（限频段 80–1000Hz，仅留最强音）</label>
           <label class="chk"><input type="checkbox" id="optClean" checked /> 纯净后处理（泛音过滤+最小音长+间隙合并+onset确认）</label>
+          <label class="chk"><input type="checkbox" id="optF0" checked /> 自动八度校正（F0 重锚定，自动把高八度误判拉回真音高）</label>
           <label class="chk"><input type="checkbox" id="optRms" /> RMS 力度（按响度重算力度值）</label>
           <label class="chk"><input type="checkbox" id="optFine" /> 更细量化网格（1/8 拍，减少时值取整误差）</label>
           <label class="chk"><input type="checkbox" id="optAutoBeats" /> 自动估计拍号（4/4、3/4、6/8…）</label>
         </div>
         <div id="accHint" style="font-size:11.5px;color:var(--muted);margin:2px 0 0 24px;line-height:1.7">
           · HPSS/纯净后处理能显著减少鼓点和弱泛音造成的误捡；<b>单旋律模式会把和弦压成单音</b>，只用于人声/主旋律，别用在和弦音乐上。<br/>
-          · 若谱面整体比实际<b>高/低了整数个八度</b>（basic-pitch 常见系统性偏差），用上方「八度偏移」整体上下移，比逐音改更省事。<br/>
+          · 若谱面整体比实际<b>高/低了整数个八度</b>（basic-pitch 常见系统性偏差），先靠上方「自动八度校正(F0)」自动拉回；仍偏高/偏低再用「八度偏移」手动整体上下移。<br/>
           · 这些选项互不冲突，可自由叠加；节奏清晰时效果最好。
         </div>
       </div>
@@ -286,6 +287,7 @@ go.addEventListener("click", async () => {
     fd.append("auto_beats", $("optAutoBeats").checked ? "true" : "false");
     fd.append("key", $("optKey").value || "C");
     fd.append("octave_shift", $("optOctave").value || "0");
+    fd.append("f0_octave_fix", $("optF0").checked ? "true" : "false");
     const r = await fetch("/api/transcribe", {method:"POST", body: fd});
     const data = await r.json();
     if(data.status !== "queued"){ showErr(data.msg || "提交失败"); return; }
@@ -360,6 +362,7 @@ function renderHistory(list, filter){
     if(o.fine_quant) otags.push("细量化");
     if(o.auto_beats) otags.push("自动拍号");
     if(o.octave_shift) otags.push("八度" + (o.octave_shift > 0 ? "+" : "") + o.octave_shift);
+    if(o.f0_octave_fix) otags.push(s.f0_octave_shifted ? ("F0校正×" + s.f0_octave_shifted) : "F0校正");
     if(o.backend && o.backend !== "basic-pitch") otags.push(o.backend);
     const optStr = otags.length
       ? '<div style="margin-top:4px">' + otags.map(t => `<span class="badge">${esc(t)}</span>`).join("") + '</div>'
