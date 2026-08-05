@@ -27,6 +27,10 @@
   .upload-label .small{color:var(--muted);font-size:12.5px;line-height:1.6}
   .upload-label input[type=file]{display:none}
   .upload-label.dragover{border-color:var(--accent);background:#20264a;box-shadow:0 0 0 2px var(--accent) inset}
+  .seg{display:inline-flex;gap:6px;margin:4px 0 14px}
+  .seg-btn{padding:7px 14px;border:1px solid var(--line);background:#0e1226;color:var(--text);border-radius:9px;cursor:pointer;font-size:14px;transition:.15s}
+  .seg-btn.active{background:var(--accent);color:#0b0e1f;border-color:var(--accent);font-weight:600}
+  .omr-text{width:100%;min-height:160px;margin-top:4px;padding:12px;border-radius:10px;border:1px solid var(--line);background:#0e1226;color:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;line-height:1.6;resize:vertical}
   .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:14px}
   label.fld{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted)}
   input[type=number]{width:100%;padding:10px;border-radius:9px;border:1px solid var(--line);background:#0e1226;color:var(--text);font-size:15px}
@@ -201,11 +205,20 @@
 
   <div class="card hidden" id="omrMode">
     <div class="adv-title">识谱成曲 · 上传乐谱图片（简谱 / 五线谱）</div>
+    <div class="seg">
+      <button type="button" id="omrSrcImg" class="seg-btn active">上传图片</button>
+      <button type="button" id="omrSrcText" class="seg-btn">手动输入</button>
+    </div>
     <label class="upload-label" id="omrDrop">
       <input id="omrFile" type="file" accept="image/*" />
       <span class="big" id="omrDropText">点击选择乐谱图片</span>
       <span class="small">支持 PNG / JPG / WEBP 等<br/>印刷清晰、排版规整的乐谱识别最佳<br/>也可直接把图片拖到此处上传</span>
     </label>
+    <textarea id="omrText" class="omr-text hidden" spellcheck="false" placeholder="在此粘贴 / 输入简谱文本，例如：1 2 3 4 | >5 >6 >7 | 0 0 | 3. 2. 1. |"></textarea>
+    <div id="omrTextTools" class="hidden" style="margin:8px 0 0">
+      <button type="button" id="omrTpl" class="copyBtn">填充模板</button>
+      <span class="small" style="margin-left:8px">空格分隔每个音；| 小节线；# 注释；详见模板内说明</span>
+    </div>
     <div class="row">
       <label class="fld" style="min-width:200px">谱式
         <select id="omrNotation">
@@ -242,6 +255,7 @@
       · <b>简谱</b>：本地 OCR（PaddleOCR / Tesseract）直接识别数字谱，自动还原音高、八度与节奏，立即出 MIDI / 五线谱 / 简谱并可播放。<br/>
       · <b>五线谱</b>：调用开源 OMR 引擎 Audiveris 把图片转 MusicXML 再解析；若未安装会在识别时报安装指引。<br/>
       · 识别结果与「音视频转乐谱」共用同一套渲染，可下载 MIDI / MusicXML、复制简谱。
+      · <b>手动输入</b>：无图片或图片识别不准时，点「手动输入」→「填充模板」，按模板内说明用文本写简谱，免 OCR 立即出谱。
     </div>
   </div>
 
@@ -433,7 +447,47 @@ omrDrop.addEventListener("drop", e => {
 // 阻止在页面其它位置误拖文件导致浏览器跳转
 window.addEventListener("dragover", e => e.preventDefault());
 window.addEventListener("drop", e => e.preventDefault());
+// 识谱成曲：上传图片 / 手动输入 切换
+const omrSrcImg = $("omrSrcImg"), omrSrcText = $("omrSrcText"),
+      omrText = $("omrText"), omrTextTools = $("omrTextTools"),
+      omrTpl = $("omrTpl");
+function omr_jianpu_template(){
+  return [
+    "# 简谱文本输入（空格分隔每个音；| 小节线；# 开头为注释）",
+    "# 唱名: 1 2 3 4 5 6 7   休止: 0",
+    "# 高八度加 >  (例 >1)    低八度加 <  (例 <6)",
+    "# 八分音符加 _ (例 _1)    十六分加 __ (例 __1)",
+    "# 延长拍加 - 每拍一个 (例 1- 2--)   附点加 . (例 3. _1.)",
+    "1 2 3 4 | >5 >6 >7 | 0 0 | 3. 2. 1. | _1 _2 _3 _4 | <5 <6 <7 |",
+  ].join("\n") + "\n";
+}
+const OMR_TEXT_TEMPLATE = omr_jianpu_template();
+function setOmrSource(mode){
+  const text = mode === "text";
+  omrSrcText.classList.toggle("active", text);
+  omrSrcImg.classList.toggle("active", !text);
+  omrDrop.classList.toggle("hidden", text);
+  omrText.classList.toggle("hidden", !text);
+  omrTextTools.classList.toggle("hidden", !text);
+}
+omrSrcImg.addEventListener("click", () => setOmrSource("img"));
+omrSrcText.addEventListener("click", () => setOmrSource("text"));
+omrTpl.addEventListener("click", () => { omrText.value = OMR_TEXT_TEMPLATE; });
 omrGo.addEventListener("click", () => {
+  if(omrSrcText.classList.contains("active")){
+    const txt = omrText.value.trim();
+    if(!txt){ showErr("请先在文本框中输入简谱（可点「填充模板」）。"); return; }
+    runJob("/api/omr/text", () => {
+      const fd = new FormData();
+      fd.append("text", txt);
+      fd.append("notation", "jianpu");
+      fd.append("bpm", $("omrBpm").value || 120);
+      fd.append("beats", $("omrBeats").value || 4);
+      fd.append("key", $("omrKey").value || "C");
+      return fd;
+    }, omrGo, "排队识别中…");
+    return;
+  }
   const f = omrFile.files[0];
   if(!f){ showErr("请先选择一张乐谱图片（简谱或五线谱）。"); return; }
   runJob("/api/omr", () => {

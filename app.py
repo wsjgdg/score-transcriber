@@ -312,6 +312,23 @@ def _run_job(uid, src, out_dir, bpm, beats, min_velocity, separate,
 
 # ---------------------------------------------------------------------------
 # 识谱成曲（OMR）：图片 → 音符表（简谱用本地 OCR，五线谱用 Audiveris）
+# 进度轮询端点：前端 runJob 靠它拿 status / stage / progress / result。
+# 之前该路由缺失，导致所有长任务（转录 / 识谱）永远停在初始 2%。
+@app.get("/api/progress/{job_id}")
+def api_progress(job_id: str):
+    with _JOBS_LOCK:
+        j = _JOBS.get(job_id)
+        if not j:
+            return {"status": "not_found"}
+        return {
+            "status": j["status"],
+            "stage": j.get("stage", ""),
+            "progress": j.get("progress", 0),
+            "result": j.get("result"),
+            "error": j.get("error"),
+        }
+
+
 # 复用 _JOBS 进度机制：立即返回 job_id，前端轮询 /api/progress/{job_id}。
 # ---------------------------------------------------------------------------
 @app.post("/api/omr")
@@ -366,10 +383,12 @@ def _run_omr_job(uid, src, out_dir, note_type, bpm, beats, key, opts, filename):
             pass
 
     try:
+        _report("识别乐谱图片…", 6)
         if note_type == "staff":
             note_list, meta = omr_staff.recognize_staff(src, bpm=bpm, beats=beats, key=key)
         else:
             note_list, meta = omr_jianpu.recognize_jianpu(src, bpm=bpm, beats=beats, key=key)
+        _report("生成乐谱文件…", 20)
         if not note_list:
             _finish("error", error="未从图片中识别出音符。请换一张印刷清晰、排版规整的乐谱再试。")
             return
@@ -386,12 +405,14 @@ def _run_omr_job(uid, src, out_dir, note_type, bpm, beats, key, opts, filename):
     if res.get("status") != "ok" or not res.get("files"):
         _finish("error", error="识谱完成但未生成任何乐谱文件，请重试。")
         return
+    _finish_omr_result(uid, res, filename, opts, bpm, beats)
 
+
+def _finish_omr_result(uid, res, filename, opts, bpm, beats):
+    """把 OMR 结果落库历史并标记 job 完成（图片 / 手动文本共用）。"""
     def to_url(p):
         return "/outputs/" + os.path.relpath(p, str(OUT)).replace(os.sep, "/")
-
     files = {k: to_url(v) for k, v in res.get("files", {}).items()}
-
     record = {
         "id": uid,
         "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -405,8 +426,69 @@ def _run_omr_job(uid, src, out_dir, note_type, bpm, beats, key, opts, filename):
         "jianpu": res["jianpu"],
     }
     _add_history(record)
-    _finish("done", result={"status": "ok", "stats": res["stats"],
-                            "files": files, "jianpu": res["jianpu"]})
+    with _JOBS_LOCK:
+        _JOBS[uid] = {"status": "done", "stage": "", "progress": 100,
+                      "result": {"status": "ok", "stats": res["stats"],
+                                 "files": files, "jianpu": res["jianpu"]},
+                      "error": None}
+
+
+
+@app.post("/api/omr/text")
+async def api_omr_text(text: str = Form(...),
+                        notation: str = Form("jianpu"),
+                        bpm: float = Form(120),
+                        beats: int = Form(4),
+                        key: str = Form("C")):
+    """手动输入简谱文本 → 直接解析为音符表，跳过 OCR 图片识别。"""
+    if notation == "staff":
+        return JSONResponse({"status": "error",
+                             "msg": "手动输入暂仅支持简谱（jianpu）。"})
+    uid = uuid.uuid4().hex
+    out_dir = str(OUT / uid)
+    bpm = max(40.0, min(300.0, float(bpm)))
+    beats = max(1, min(12, int(beats)))
+    key = key or "C"
+    opts = {"mode": "omr", "notation": "jianpu", "bpm": bpm,
+            "beats": beats, "key": key, "source": "manual"}
+    with _JOBS_LOCK:
+        _JOBS[uid] = {"status": "queued", "stage": "排队中", "progress": 0,
+                      "result": None, "error": None}
+    threading.Thread(target=_run_omr_text_job,
+                    args=(uid, text, out_dir, bpm, beats, key, opts),
+                    daemon=True).start()
+    return {"status": "queued", "job_id": uid}
+
+
+def _run_omr_text_job(uid, text, out_dir, bpm, beats, key, opts):
+    def _report(stage, pct):
+        with _JOBS_LOCK:
+            j = _JOBS.get(uid)
+            if j:
+                j["stage"] = stage
+                j["progress"] = pct
+
+    def _finish(status, result=None, error=None):
+        with _JOBS_LOCK:
+            _JOBS[uid] = {"status": status, "stage": "", "progress": 100,
+                          "result": result, "error": error}
+    try:
+        _report("解析简谱文本…", 8)
+        note_list = omr_jianpu.parse_jianpu_text(text, bpm=bpm)
+        if not note_list:
+            _finish("error", error="文本中未解析到任何音符。请按模板格式输入，例如：1 2 3 4 | 5 -")
+            return
+        _report("生成乐谱文件…", 25)
+        res = transcriber.build_outputs(note_list, out_dir, bpm=bpm, beats=beats,
+                                        key=key, on_progress=_report)
+        res.pop("note_list", None)
+    except Exception as e:
+        _finish("error", error=f"识谱失败：{e}")
+        return
+    if res.get("status") != "ok" or not res.get("files"):
+        _finish("error", error="生成乐谱失败，请重试。")
+        return
+    _finish_omr_result(uid, res, "(手动输入)", opts, bpm, beats)
 
 
 @app.get("/api/caps")

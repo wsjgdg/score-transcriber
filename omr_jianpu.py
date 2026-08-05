@@ -217,3 +217,78 @@ def recognize_jianpu(path: str, bpm: float = 120, beats: int = 4,
         "notation": "jianpu",
         "key": key_label,
     }
+
+
+# 手动输入用的简谱文本模板（与前端「填充模板」保持一致）
+TEMPLATE_JIANPU_TEXT = """# 简谱文本输入（空格分隔每个音；| 小节线；# 开头为注释）
+# 唱名: 1 2 3 4 5 6 7   休止: 0
+# 高八度加 >  (例 >1)    低八度加 <  (例 <6)
+# 八分音符加 _ (例 _1)    十六分加 __ (例 __1)
+# 延长拍加 - 每拍一个 (例 1- 2--)   附点加 . (例 3. _1.)
+1 2 3 4 | >5 >6 >7 | 0 0 | 3. 2. 1. | _1 _2 _3 _4 | <5 <6 <7 |
+"""
+
+
+def parse_jianpu_text(text, bpm: float = 120, base_midi: int = BASE_MIDI):
+    """把简谱文本解析为 note_list：[(onset, offset, pitch, velocity, None), ...]。
+
+    语法（与 parse_jianpu_glyphs 时值规则一致，纯文本版）：
+      · 1-7 唱名；0 休止。
+      · >数字 高八度(+12)；<数字 低八度(-12)。
+      · _数字 八分音符(×0.5)；__数字 十六分(×0.25)。
+      · 数字- 延长1拍(可叠加)；数字. 附点(×1.5)。可组合：1-. = 3拍。
+      · | 小节线不计时值；# 开头的整行忽略。
+    调性（key）不在此处转调，交给下游 build_outputs 统一处理显示，
+    与图片 OMR 行为保持一致。
+    """
+    beat_sec = 60.0 / max(40.0, min(300.0, bpm))
+    note_list = []
+    cursor = 0.0
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        for tok in line.replace("|", " ").split():
+            octave = 0
+            i = 0
+            while i < len(tok) and tok[i] in "<>":
+                octave += 1 if tok[i] == ">" else -1
+                i += 1
+            shorten = 0
+            while i < len(tok) and tok[i] == "_":
+                shorten += 1
+                i += 1
+            if i >= len(tok):
+                continue
+            ch = tok[i]
+            i += 1
+            if ch == "0":
+                is_rest = True
+            elif ch in "1234567":
+                is_rest = False
+            else:
+                continue
+            dur = 1.0
+            dotted = False
+            sustain = 0
+            while i < len(tok):
+                c = tok[i]
+                if c == "-":
+                    sustain += 1
+                elif c == ".":
+                    dotted = True
+                else:
+                    break
+                i += 1
+            if shorten >= 1:
+                dur = 1.0 / (2 ** shorten)
+            dur += sustain
+            if dotted:
+                dur *= 1.5
+            if is_rest:
+                pitch = -1
+            else:
+                pitch = base_midi + DEGREE_SEMITONES[int(ch)] + 12 * octave
+            note_list.append((cursor, cursor + dur * beat_sec, pitch, 1.0, None))
+            cursor += dur * beat_sec
+    return note_list
