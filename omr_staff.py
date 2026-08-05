@@ -30,7 +30,7 @@ def find_audiveris():
         p = shutil.which(name)
         if p:
             return [p]
-    # 查找 jar
+    # 查找 jar（完整应用需连同 lib/ 依赖一起构造 classpath）
     for d in _AUDIVERIS_DIRS:
         if not os.path.isdir(d):
             continue
@@ -39,9 +39,29 @@ def find_audiveris():
                 if f.lower() == "audiveris.jar":
                     jar = os.path.join(root, f)
                     java = shutil.which("java")
-                    if java:
-                        return [java, "-jar", jar]
+                    if not java:
+                        continue
+                    lib = os.path.join(root, "lib")
+                    if os.path.isdir(lib):
+                        return [java, "-cp", jar + ":" + os.path.join(lib, "*"),
+                                _audiveris_main_class(root)]
+                    return [java, "-jar", jar]
     return None
+
+
+def _audiveris_main_class(app_dir):
+    """从 audiveris.jar 的 MANIFEST 读取 Main-Class；读不到则回退到常见默认。"""
+    jar = os.path.join(app_dir, "audiveris.jar")
+    try:
+        import zipfile, re
+        with zipfile.ZipFile(jar) as z:
+            mf = z.read("META-INF/MANIFEST.MF").decode("utf-8", "ignore")
+        m = re.search(r"Main-Class:\s*(\S+)", mf)
+        if m:
+            return m.group(1)
+    except Exception:
+        pass
+    return "org.audiveris.omr.Main"
 
 
 def _parse_musicxml(xml_path: str, bpm: float):
@@ -95,12 +115,17 @@ def recognize_staff(path: str, bpm: float = 120, beats: int = 4,
     except FileNotFoundError:
         raise BackendUnavailable("Audiveris 可执行文件无法启动，请检查 Java 与安装路径。")
 
-    # 查找生成的 MusicXML
+    # 查找生成的 MusicXML（优先 out_dir；部分 Audiveris 版本会把产物写到输入文件附近，故兜底搜索）
     xml = None
-    for root, _d, files in os.walk(out_dir):
-        for f in files:
-            if f.lower().endswith((".mxl", ".xml", ".musicxml")):
-                xml = os.path.join(root, f)
+    for cdir in (out_dir, os.path.dirname(path), os.path.dirname(os.path.dirname(path))):
+        if not os.path.isdir(cdir):
+            continue
+        for root, _d, files in os.walk(cdir):
+            for f in files:
+                if f.lower().endswith((".mxl", ".xml", ".musicxml")):
+                    xml = os.path.join(root, f)
+                    break
+            if xml:
                 break
         if xml:
             break

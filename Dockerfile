@@ -26,19 +26,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# 五线谱 OMR 引擎 Audiveris（开源，Java）。
-# 取官方 .deb 发行包，仅解包取出 audiveris.jar 到 /opt/audiveris
-# （omr_staff.find_audiveris() 会自动探测该路径）。
+# 五线谱 OMR 引擎 Audiveris（开源，Java，纯 Java 应用）。
+# 取 ubuntu22.04 的 deb（GLIBC 2.35 低于 Debian 12 的 2.36，兼容性更好）。
+# 关键：Audiveris 不是单 jar 能跑——必须连同 lib/ 依赖。这里解包出完整应用到
+# /opt/audiveris（audiveris.jar + lib/），并动态读取 jar 内 Main-Class 生成带
+# lib/* classpath 的启动器到 /usr/local/bin/audiveris（在 PATH 上），确保
+# find_audiveris() 直接命中且 classpath 正确（仅拷 jar 会因缺 lib 而崩溃）。
 # 版本固定以保证镜像可复现；升级时改 AUDIVERIS_VERSION 即可。
 ENV AUDIVERIS_VERSION=5.11.0
 RUN set -eux; \
     curl -fSL -o /tmp/audiveris.deb \
-      "https://github.com/Audiveris/audiveris/releases/download/${AUDIVERIS_VERSION}/Audiveris-${AUDIVERIS_VERSION}-ubuntu24.04-x86_64.deb"; \
+      "https://github.com/Audiveris/audiveris/releases/download/${AUDIVERIS_VERSION}/Audiveris-${AUDIVERIS_VERSION}-ubuntu22.04-x86_64.deb"; \
     dpkg-deb -x /tmp/audiveris.deb /tmp/audiveris_extract; \
+    rm -f /tmp/audiveris.deb; \
+    jar=$(find /tmp/audiveris_extract -name 'audiveris.jar' -print -quit); \
+    if [ -z "$jar" ]; then echo "ERROR: audiveris.jar not found in extracted deb"; exit 1; fi; \
+    app=$(dirname "$jar"); \
     mkdir -p /opt/audiveris; \
-    jar=$(find /tmp/audiveris_extract -name 'audiveris.jar' | head -n1); \
-    if [ -n "$jar" ]; then cp "$jar" /opt/audiveris/audiveris.jar; fi; \
-    rm -rf /tmp/audiveris.deb /tmp/audiveris_extract; \
+    cp -r "$app"/. /opt/audiveris/; \
+    rm -rf /tmp/audiveris_extract; \
+    main=$(python3 -c "import zipfile,re; z=zipfile.ZipFile('/opt/audiveris/audiveris.jar'); m=z.read('META-INF/MANIFEST.MF').decode('utf-8','ignore'); mm=re.search(r'Main-Class:\s*(\S+)', m); print(mm.group(1) if mm else 'org.audiveris.omr.Main')"); \
+    printf '#!/bin/sh\nexec java -Xmx1200m -cp \"/opt/audiveris/audiveris.jar:/opt/audiveris/lib/*\" %s \"$@\"\n' "$main" > /usr/local/bin/audiveris; \
+    chmod +x /usr/local/bin/audiveris; \
+    which audiveris; \
     java -version
 
 WORKDIR /app
